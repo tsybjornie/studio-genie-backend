@@ -1,0 +1,428 @@
+{
+  "info": {
+    "name": "Studio Génie API",
+    "description": "Complete API collection for Studio Génie - UGC AI Video SaaS",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"securepassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"securepassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set(\"access_token\", jsonData.access_token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "me"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Credits",
+      "item": [
+        {
+          "name": "Get Credits Balance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/credits",
+              "host": ["{{base_url}}"],
+              "path": ["credits"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Videos",
+      "item": [
+        {
+          "name": "Generate Video",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"A beautiful sunset over the ocean\",\n  \"style\": \"cinematic\",\n  \"image_url\": null\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/videos/generate",
+              "host": ["{{base_url}}"],
+              "path": ["videos", "generate"]
+            }
+          }
+        },
+        {
+          "name": "List Videos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/videos?limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["videos"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Video Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/videos/:video_id",
+              "host": ["{{base_url}}"],
+              "path": ["videos", ":video_id"],
+              "variable": [
+                {
+                  "key": "video_id",
+                  "value": "your-video-id-here"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Download Video",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/videos/:video_id/download",
+              "host": ["{{base_url}}"],
+              "path": ["videos", ":video_id", "download"],
+              "variable": [
+                {
+                  "key": "video_id",
+                  "value": "your-video-id-here"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Billing",
+      "item": [
+        {
+          "name": "Create Stripe Checkout (Subscription)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price_id\": \"price_starter_monthly\",\n  \"success_url\": \"https://yourapp.com/success\",\n  \"cancel_url\": \"https://yourapp.com/cancel\",\n  \"mode\": \"subscription\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/create_checkout_session",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "create_checkout_session"]
+            }
+          }
+        },
+        {
+          "name": "Create Stripe Checkout (Credit Pack)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price_id\": \"price_credits_20\",\n  \"success_url\": \"https://yourapp.com/success\",\n  \"cancel_url\": \"https://yourapp.com/cancel\",\n  \"mode\": \"payment\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/create_checkout_session",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "create_checkout_session"]
+            }
+          }
+        },
+        {
+          "name": "Create Coinbase Charge",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"credits\": 50,\n  \"success_url\": \"https://yourapp.com/success\",\n  \"cancel_url\": \"https://yourapp.com/cancel\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/create_coinbase_charge",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "create_coinbase_charge"]
+            }
+          }
+        },
+        {
+          "name": "Stripe Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "stripe-signature",
+                "value": "webhook-signature-here"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/webhook/stripe",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "webhook", "stripe"]
+            }
+          }
+        },
+        {
+          "name": "Coinbase Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CC-Webhook-Signature",
+                "value": "webhook-signature-here"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/billing/webhook/coinbase",
+              "host": ["{{base_url}}"],
+              "path": ["billing", "webhook", "coinbase"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Subscriptions",
+      "item": [
+        {
+          "name": "List Subscriptions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/subscriptions",
+              "host": ["{{base_url}}"],
+              "path": ["subscriptions"]
+            }
+          }
+        },
+        {
+          "name": "Get Subscription Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/subscriptions/:subscription_id",
+              "host": ["{{base_url}}"],
+              "path": ["subscriptions", ":subscription_id"],
+              "variable": [
+                {
+                  "key": "subscription_id",
+                  "value": "your-subscription-id-here"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health Check",
+      "item": [
+        {
+          "name": "Root",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:8000/",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": [""]
+            }
+          }
+        },
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:8000/health",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8000",
+              "path": ["health"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

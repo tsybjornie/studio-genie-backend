@@ -5,7 +5,7 @@ from passlib.context import CryptContext
 from fastapi import HTTPException, Security, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core.config import settings
-from app.core.database import get_db, SupabaseClient
+from app.core.database import get_db, Database
 import unicodedata
 import string
 
@@ -42,7 +42,7 @@ def decode_access_token(token: str) -> dict:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Security(security),
-    db: SupabaseClient = Depends(get_db)
+    db: Database = Depends(get_db)
 ):
     token = credentials.credentials
     payload = decode_access_token(token)

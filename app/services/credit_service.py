@@ -1,59 +1,44 @@
 from app.core.database import db
-from fastapi import HTTPException
-import logging
+from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+# Mapping Price IDs to Credit Amounts
+CREDIT_PACKS = {
+    settings.STRIPE_PRICE_STARTER: 60,
+    settings.STRIPE_PRICE_CREATOR: 150,
+    settings.STRIPE_PRICE_PRO: 360,
+}
 
-class CreditService:
 
-    def get_balance(self, user_id):
-        result = (
-            db.service_client
-            .table("users")
-            .select("credits_remaining")
-            .eq("id", user_id)
-            .single()
-            .execute()
-        )
+async def apply_credits(email: str, price_id: str):
+    """
+    Applies credits to a user account based on the purchased price_id.
+    Adapts user request logic to work with Supabase (PostgreSQL) backend.
+    """
+    credits_to_add = CREDIT_PACKS.get(price_id)
+    if not credits_to_add:
+        print(f"[CreditService] Unknown price_id: {price_id}")
+        return
 
-        if not result.data:
-            raise HTTPException(404, "User not found")
+    try:
+        # 1. Find user by email (Supabase)
+        response = db.service_client.table("users").select("id, credits_remaining").eq("email", email).single().execute()
+        user = response.data
+        
+        if not user:
+            print(f"[CreditService] User not found for email: {email}")
+            return
 
-        return result.data["credits_remaining"]
+        current_balance = user.get("credits_remaining") or 0
+        new_balance = current_balance + credits_to_add
 
-    def add_credits(self, user_id, amount, reason="topup"):
-        if amount <= 0:
-            raise HTTPException(400, "Invalid credit amount")
+        # 2. Update credits
+        db.service_client.table("users").update(
+            {"credits_remaining": new_balance}
+        ).eq("email", email).execute()
 
-        update = (
-            db.service_client.rpc("increment_credits", {"uid": user_id, "amount": amount})
-            .execute()
-        )
+        print(f"[CreditService] Added {credits_to_add} credits to {email}. New Balance: {new_balance}")
+        return new_balance
 
-        logger.info(f"[CREDITS] Added {amount} credits to {user_id} — reason={reason}")
-        return self.get_balance(user_id)
-
-    def deduct_credits(self, user_id, amount):
-        balance = self.get_balance(user_id)
-
-        if balance < amount:
-            raise HTTPException(402, "Not enough credits")
-
-        update = (
-            db.service_client.rpc("decrement_credits", {"uid": user_id, "amount": amount})
-            .execute()
-        )
-
-        logger.info(f"[CREDITS] Deducted {amount} credits from {user_id}")
-        return self.get_balance(user_id)
-
-    def use_trial(self, user_id):
-        update = (
-            db.service_client
-            .table("users")
-            .update({"has_trial_used": True})
-            .eq("id", user_id)
-            .execute()
-        )
-
-credit_service = CreditService()
+    except Exception as e:
+        print(f"[CreditService] Error applying credits: {e}")
+        return None

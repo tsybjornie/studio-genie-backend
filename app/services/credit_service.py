@@ -1,44 +1,24 @@
-from app.core.database import db
 from app.core.config import settings
 
-# Mapping Price IDs to Credit Amounts
-CREDIT_PACKS = {
-    settings.STRIPE_PRICE_STARTER: 60,
-    settings.STRIPE_PRICE_CREATOR: 150,
-    settings.STRIPE_PRICE_PRO: 360,
+# Mapping Stripe subscription price IDs → credit amounts
+SUBSCRIPTION_CREDIT_MAP = {
+    settings.STRIPE_STARTER_PRICE_ID: 60,   # Starter plan = 60 credits
+    settings.STRIPE_CREATOR_PRICE_ID: 150,  # Creator plan = 150 credits
+    settings.STRIPE_PRO_PRICE_ID: 360,      # Pro plan = 360 credits
 }
 
-
-async def apply_credits(email: str, price_id: str):
+def apply_credits(user, price_id):
     """
-    Applies credits to a user account based on the purchased price_id.
-    Adapts user request logic to work with Supabase (PostgreSQL) backend.
+    Award credits to user after Stripe invoice.paid webhook.
     """
-    credits_to_add = CREDIT_PACKS.get(price_id)
-    if not credits_to_add:
-        print(f"[CreditService] Unknown price_id: {price_id}")
-        return
+    credits_to_add = SUBSCRIPTION_CREDIT_MAP.get(price_id)
 
-    try:
-        # 1. Find user by email (Supabase)
-        response = db.service_client.table("users").select("id, credits_remaining").eq("email", email).single().execute()
-        user = response.data
-        
-        if not user:
-            print(f"[CreditService] User not found for email: {email}")
-            return
+    if credits_to_add is None:
+        print(f"[WARN] No credit rule for price_id={price_id}")
+        return False
 
-        current_balance = user.get("credits_remaining") or 0
-        new_balance = current_balance + credits_to_add
+    user.credits += credits_to_add
+    user.save()
 
-        # 2. Update credits
-        db.service_client.table("users").update(
-            {"credits_remaining": new_balance}
-        ).eq("email", email).execute()
-
-        print(f"[CreditService] Added {credits_to_add} credits to {email}. New Balance: {new_balance}")
-        return new_balance
-
-    except Exception as e:
-        print(f"[CreditService] Error applying credits: {e}")
-        return None
+    print(f"[CREDITS] Added {credits_to_add} credits to user {user.email}")
+    return True

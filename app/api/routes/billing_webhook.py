@@ -2,13 +2,13 @@ from fastapi import APIRouter, Request, HTTPException
 import stripe
 from app.core.config import settings
 from app.services.credit_service import apply_credits
+from app.models.user import User  # adjust to your project structure
 
-router = APIRouter(prefix="/billing/stripe")
+router = APIRouter(prefix="/webhook")
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
-
-@router.post("/webhook")
+@router.post("/stripe")
 async def stripe_webhook(request: Request):
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
@@ -17,28 +17,22 @@ async def stripe_webhook(request: Request):
         event = stripe.Webhook.construct_event(
             payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
         )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    except stripe.error.SignatureVerificationError:
-        raise HTTPException(status_code=400, detail="Invalid Stripe signature")
-
-    # Subscription created or renewed
-    if event["type"] == "checkout.session.completed":
-        session = event["data"]["object"]
-        customer_email = session.get("customer_details", {}).get("email")
-        
-        # Note: Line items might not be in the webhook event unless expanded.
-        # Ideally we should fetch the session from Stripe to be sure, but using user's simple logic for now.
-        # Fallback handling could be added if needed.
-        lines = session.get("line_items", {}).get("data", [])
-        if not lines:
-             # Try to retrieve session if line_items are missing
-             session = stripe.checkout.Session.retrieve(
-                 session["id"], expand=["line_items"]
-             )
-             lines = session.get("line_items", {}).get("data", [])
-        
-        if lines and customer_email:
+    # Only handle invoice.paid for subscriptions
+    if event["type"] == "invoice.paid":
+        invoice = event["data"]["object"]
+        # Safety check: ensure lines exist
+        lines = invoice.get("lines", {}).get("data", [])
+        if lines:
             price_id = lines[0]["price"]["id"]
-            await apply_credits(customer_email, price_id)
+            # invoice object has customer_email
+            customer_email = invoice.get("customer_email")
+
+            if customer_email:
+                user = User.get_by_email(customer_email)
+                if user:
+                    apply_credits(user, price_id)
 
     return {"status": "ok"}

@@ -9,5 +9,5 @@ def init_routes(app: FastAPI):
     # Billing
     app.include_router(billing_router, prefix="/billing", tags=["Billing"])
     # Webhooks
-    app.include_router(billing_webhook_router)  # Prefix is defined in the router itself
+    app.include_router(billing_webhook_router)  # 🔥 REQUIRED
 

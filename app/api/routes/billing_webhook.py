@@ -1,38 +1,58 @@
 from fastapi import APIRouter, Request, HTTPException
 import stripe
+
 from app.core.config import settings
-from app.services.credit_service import apply_credits
-from app.models.user import User  # adjust to your project structure
+from app.services.credit_service import credit_service
+from app.models.user import User
 
 router = APIRouter(prefix="/webhook")
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
+
 @router.post("/stripe")
 async def stripe_webhook(request: Request):
-    payload = await request.body()
-    sig_header = request.headers.get("stripe-signature")
+    raw_body = await request.body()
+    sig = request.headers.get("stripe-signature")
+
+    if sig is None:
+        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
 
     try:
         event = stripe.Webhook.construct_event(
-            payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
+            raw_body,
+            sig,
+            settings.STRIPE_WEBHOOK_SECRET,
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
 
-    # Only handle invoice.paid for subscriptions
-    if event["type"] == "invoice.paid":
+    event_type = event["type"]
+
+    # ==============================================
+    # INVOICE PAID → APPLY SUBSCRIPTION CREDITS
+    # ==============================================
+    if event_type == "invoice.paid":
         invoice = event["data"]["object"]
-        # Safety check: ensure lines exist
+
         lines = invoice.get("lines", {}).get("data", [])
-        if lines:
-            price_id = lines[0]["price"]["id"]
-            # invoice object has customer_email
-            customer_email = invoice.get("customer_email")
+        if not lines:
+            return {"status": "ignored", "reason": "no_line_items"}
 
-            if customer_email:
-                user = User.get_by_email(customer_email)
-                if user:
-                    apply_credits(user, price_id)
+        line = lines[0]
+        price_id = line["price"]["id"]
 
-    return {"status": "ok"}
+        email = invoice.get("customer_email")
+        if not email:
+            return {"status": "ignored", "reason": "missing_email"}
+
+        user = User.get_by_email(email)
+        if not user:
+            return {"status": "ignored", "reason": "user_not_found"}
+
+        credit_service.apply_subscription_credits(user.id, price_id)
+
+        return {"status": "ok", "handled": "invoice.paid"}
+
+    # Ignore everything else
+    return {"status": "ignored", "event": event_type}

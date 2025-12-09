@@ -1,24 +1,106 @@
 from app.core.config import settings
+from fastapi import HTTPException
+from app.models.user import User
+from app.models.subscription import Subscription
+import logging
 
-# Mapping Stripe subscription price IDs → credit amounts
+logger = logging.getLogger(__name__)
+
+# ============================================
+#   SUBSCRIPTION CREDIT AMOUNTS (US MARKET)
+# ============================================
+
 SUBSCRIPTION_CREDIT_MAP = {
-    settings.STRIPE_STARTER_PRICE_ID: 60,   # Starter plan = 60 credits
-    settings.STRIPE_CREATOR_PRICE_ID: 150,  # Creator plan = 150 credits
-    settings.STRIPE_PRO_PRICE_ID: 360,      # Pro plan = 360 credits
+    settings.STRIPE_STARTER_PRICE_ID: 60,     # Starter $39 → 60 credits
+    settings.STRIPE_CREATOR_PRICE_ID: 150,    # Creator $79 → 150 credits
+    settings.STRIPE_PRO_PRICE_ID: 360,        # Pro $149 → 360 credits
 }
 
-def apply_credits(user, price_id):
-    """
-    Award credits to user after Stripe invoice.paid webhook.
-    """
-    credits_to_add = SUBSCRIPTION_CREDIT_MAP.get(price_id)
+# ============================================
+#   OPTIONAL CREDIT PACKS
+# ============================================
 
-    if credits_to_add is None:
-        print(f"[WARN] No credit rule for price_id={price_id}")
-        return False
+CREDIT_PACK_AMOUNTS = {
+    "30": {"credits": 30, "price_usd": 12},
+    "100": {"credits": 100, "price_usd": 35},
+    "300": {"credits": 300, "price_usd": 90},
+    "1000": {"credits": 1000, "price_usd": 250},
+}
 
-    user.credits += credits_to_add
-    user.save()
 
-    print(f"[CREDITS] Added {credits_to_add} credits to user {user.email}")
-    return True
+class CreditService:
+
+    # -------------------------
+    # Dashboard credit retrieval
+    # -------------------------
+    def get_user_credits(self, user_id: str):
+        user = User.get(user_id)
+        if not user:
+            raise Exception("User not found")
+
+        subscription = Subscription.get_by_user_id(user_id)
+
+        return {
+            "credits_remaining": user.credits,
+            "has_trial_used": user.has_trial_used,
+            "plan": subscription.plan if subscription else None,
+        }
+
+    # -------------------------------------------
+    # Award credits after Stripe subscription paid
+    # -------------------------------------------
+    def apply_subscription_credits(self, user_id: str, price_id: str):
+        user = User.get(user_id)
+        if not user:
+            raise Exception("User not found")
+
+        credits_to_add = SUBSCRIPTION_CREDIT_MAP.get(price_id)
+        if credits_to_add is None:
+            logger.warning(f"[CREDITS] Unknown Stripe price_id={price_id}")
+            return False
+
+        user.credits += credits_to_add
+        user.save()
+
+        logger.info(f"[CREDITS] +{credits_to_add} credited to {user.email}")
+        return True
+
+    # -----------------------------------
+    # Apply one-time purchased credit pack
+    # -----------------------------------
+    def apply_credit_pack(self, user_id: str, pack_key: str):
+        user = User.get(user_id)
+        if not user:
+            raise Exception("User not found")
+
+        if pack_key not in CREDIT_PACK_AMOUNTS:
+            raise Exception("Invalid credit pack")
+
+        amount = CREDIT_PACK_AMOUNTS[pack_key]["credits"]
+
+        user.credits += amount
+        user.save()
+
+        logger.info(f"[CREDIT PACK] +{amount} credits added to {user.email}")
+        return True
+
+    # --------------
+    # One-time trial use
+    # --------------
+    def use_trial(self, user_id: str):
+        user = User.get(user_id)
+        if not user:
+            raise Exception("User not found")
+
+        if user.has_trial_used:
+            raise HTTPException(400, "Trial already used")
+
+        user.has_trial_used = True
+        user.save()
+
+        logger.info(f"[TRIAL] Trial used by {user.email}")
+        return True
+
+
+# Global instance used by all routes
+credit_service = CreditService()

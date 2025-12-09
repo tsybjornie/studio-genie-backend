@@ -32,7 +32,6 @@ class Settings(BaseSettings):
     STRIPE_CREATOR_PRICE_ID: str
     STRIPE_PRO_PRICE_ID: str
 
-    # (Optional credit packs if you enable them)
     STRIPE_CREDIT_PACK_30_PRICE_ID: str | None = None
     STRIPE_CREDIT_PACK_100_PRICE_ID: str | None = None
     STRIPE_CREDIT_PACK_300_PRICE_ID: str | None = None
@@ -42,6 +41,22 @@ class Settings(BaseSettings):
     # CORS
     # ==============================
     CORS_ORIGINS: str = "*"
+
+    @property
+    def cors_origins_list(self):
+        """
+        Required by FastAPI middleware.
+        Converts CSV string → Python list.
+        Works for:
+            "*" 
+            "http://localhost:3000"
+            "http://a.com, http://b.com"
+        """
+        if self.CORS_ORIGINS == "*" or self.CORS_ORIGINS.strip() == "":
+            return ["*"]
+
+        # split comma-separated values
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
 
     class Config:
         env_file = ".env"

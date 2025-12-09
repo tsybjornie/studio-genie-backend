@@ -85,20 +85,25 @@ class CreditService:
         return True
 
     # --------------
-    # One-time trial use
+    # One-time trial use (3 credits = 1 video)
     # --------------
-    def use_trial(self, user_id: str):
+    def apply_trial(self, user_id: str):
         user = User.get(user_id)
         if not user:
             raise Exception("User not found")
 
+        # User already claimed
         if user.has_trial_used:
-            raise HTTPException(400, "Trial already used")
+            logger.warning(f"[TRIAL] User {user.email} already used trial.")
+            return False
 
+        # Grant trial
+        trial_credits = 3
+        user.credits += trial_credits
         user.has_trial_used = True
         user.save()
 
-        logger.info(f"[TRIAL] Trial used by {user.email}")
+        logger.info(f"[TRIAL] Granted {trial_credits} trial credits to {user.email}")
         return True
 
 

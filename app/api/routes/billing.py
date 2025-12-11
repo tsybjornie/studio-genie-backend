@@ -7,6 +7,10 @@ router = APIRouter()
 class CheckoutSessionRequest(BaseModel):
     price_id: str
 
+@router.options("/create-checkout-session")
+async def options_checkout():
+    return {"status": "ok"}
+
 @router.post("/create-checkout-session")
 async def create_session(payload: CheckoutSessionRequest):
     try:

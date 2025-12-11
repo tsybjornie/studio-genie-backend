@@ -26,12 +26,15 @@ app.add_middleware(
         "http://localhost:5173",
         "http://localhost:3000",
         "https://studio-genie-frontend.vercel.app",
+        "https://studio-genie-frontend-q85n68qeb-chamoreio.vercel.app",
         "https://studio-genie-frontend-5j436leom-chamoreio.vercel.app",
         "https://*.vercel.app",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 # =========================================================

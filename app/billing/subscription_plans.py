@@ -88,6 +88,21 @@ SUBSCRIPTION_PLANS = {
             "24/7 priority support"
         ]
     ),
+    "custom": SubscriptionPlan(
+        name="custom",
+        display_name="Custom",
+        price_id="",  # No Stripe price ID - custom pricing
+        monthly_credits=0,  # Negotiated per customer
+        price_usd=0.0,  # Custom pricing
+        features=[
+            "50–500 videos per month",
+            "Everything in Pro",
+            "API access",
+            "Dedicated manager",
+            "Team seats",
+            "24/7 support"
+        ]
+    ),
 }
 
 

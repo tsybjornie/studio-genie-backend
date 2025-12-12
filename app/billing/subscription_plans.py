@@ -38,7 +38,7 @@ class SubscriptionPlan:
 
 
 # ---------------------------------------------------
-#  🔥 REAL PRICING FROM YOUR WEBSITE + STRIPE
+#  SUBSCRIPTION PLANS - Match Frontend Pricing
 # ---------------------------------------------------
 
 SUBSCRIPTION_PLANS = {
@@ -46,46 +46,50 @@ SUBSCRIPTION_PLANS = {
         name="starter",
         display_name="Starter",
         price_id=settings.STRIPE_STARTER_PRICE_ID,
-        monthly_credits=60,          # 60 credits total
-        price_usd=29.00,             # $29
+        monthly_credits=4,  # 4 AI-generated videos
+        price_usd=39.00,  # $39/mo
         features=[
-            "20 AI-generated videos per month",
-            "60 credits total",
-            "HD video generation",
-            "Basic templates",
-            "Standard processing",
-            "Email support"
+            "4 AI-generated videos",
+            "300+ AI creators",
+            "35+ languages",
+            "2-minute rendering",
+            "Sora 2",
+            "Bulk content generator",
+            "B-roll generator"
         ]
     ),
     "creator": SubscriptionPlan(
         name="creator",
         display_name="Creator",
         price_id=settings.STRIPE_CREATOR_PRICE_ID,
-        monthly_credits=150,         # 150 credits total
-        price_usd=59.00,             # $59
+        monthly_credits=12,  # 12 AI-generated videos
+        price_usd=79.00,  # $79/mo
         features=[
-            "50 AI-generated videos per month",
-            "150 credits total",
-            "HD + 4K video generation",
-            "Premium templates",
-            "Faster processing",
-            "Priority support"
+            "12 AI-generated videos",
+            "300+ AI creators",
+            "35+ languages",
+            "2-minute rendering",
+            "Sora 2",
+            "Bulk content generator",
+            "B-roll generator"
         ]
     ),
     "pro": SubscriptionPlan(
         name="pro",
         display_name="Pro",
         price_id=settings.STRIPE_PRO_PRICE_ID,
-        monthly_credits=360,         # 360 credits total
-        price_usd=99.00,             # $99
+        monthly_credits=30,  # 30 AI-generated videos
+        price_usd=149.00,  # $149/mo
         features=[
-            "120 AI-generated videos per month",
-            "360 credits total",
-            "Fastest processing",
-            "All premium templates",
-            "API access",
-            "Team features",
-            "24/7 priority support"
+            "30 AI-generated videos",
+            "300+ AI creators",
+            "35+ languages",
+            "2-minute rendering",
+            "Sora 2",
+            "Bulk content generator",
+            "B-roll generator",
+            "Product-in-hand",
+            "Video Agent"
         ]
     ),
     "custom": SubscriptionPlan(
@@ -95,7 +99,7 @@ SUBSCRIPTION_PLANS = {
         monthly_credits=0,  # Negotiated per customer
         price_usd=0.0,  # Custom pricing
         features=[
-            "50–500 videos per month",
+            "50–500 videos",
             "Everything in Pro",
             "API access",
             "Dedicated manager",

@@ -1,58 +1,62 @@
-from fastapi import APIRouter, Request, HTTPException
 import stripe
-
+import logging
+from fastapi import APIRouter, Request, HTTPException
 from app.core.config import settings
-from app.services.credit_service import credit_service
-from app.models.user import User
+from app.billing.subscription_plans import get_plan_by_price_id
 
-router = APIRouter(prefix="/webhook")
+router = APIRouter()
+logger = logging.getLogger("stripe-webhook")
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
-@router.post("/stripe")
+@router.post("/billing/webhook")
 async def stripe_webhook(request: Request):
-    raw_body = await request.body()
-    sig = request.headers.get("stripe-signature")
-
-    if sig is None:
-        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
 
     try:
         event = stripe.Webhook.construct_event(
-            raw_body,
-            sig,
-            settings.STRIPE_WEBHOOK_SECRET,
+            payload,
+            sig_header,
+            settings.STRIPE_WEBHOOK_SECRET
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
+        logger.error(f"Webhook verification failed: {e}")
+        raise HTTPException(status_code=400, detail="Invalid webhook")
 
-    event_type = event["type"]
+    # =========================
+    # 1️⃣ Checkout completed
+    # =========================
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
 
-    # ==============================================
-    # INVOICE PAID → APPLY SUBSCRIPTION CREDITS
-    # ==============================================
-    if event_type == "invoice.paid":
+        customer_id = session.get("customer")
+        subscription_id = session.get("subscription")
+        price_id = session["display_items"][0]["price"]["id"] if session.get("display_items") else None
+
+        logger.info(f"Checkout completed for customer={customer_id}")
+
+        if price_id:
+            plan = get_plan_by_price_id(price_id)
+            logger.info(f"Plan matched: {plan.display_name}")
+
+            # TODO:
+            # - create user if not exists
+            # - assign subscription_id
+            # - add plan.monthly_credits to user balance
+
+    # =========================
+    # 2️⃣ Subscription renewed
+    # =========================
+    if event["type"] == "invoice.paid":
         invoice = event["data"]["object"]
+        subscription_id = invoice.get("subscription")
 
-        lines = invoice.get("lines", {}).get("data", [])
-        if not lines:
-            return {"status": "ignored", "reason": "no_line_items"}
+        logger.info(f"Invoice paid for subscription={subscription_id}")
 
-        line = lines[0]
-        price_id = line["price"]["id"]
+        # TODO:
+        # - find user by subscription_id
+        # - ADD monthly credits again (rollover logic applies)
 
-        email = invoice.get("customer_email")
-        if not email:
-            return {"status": "ignored", "reason": "missing_email"}
-
-        user = User.get_by_email(email)
-        if not user:
-            return {"status": "ignored", "reason": "user_not_found"}
-
-        credit_service.apply_subscription_credits(user.id, price_id)
-
-        return {"status": "ok", "handled": "invoice.paid"}
-
-    # Ignore everything else
-    return {"status": "ignored", "event": event_type}
+    return {"status": "ok"}

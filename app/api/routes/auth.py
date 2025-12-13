@@ -1,14 +1,19 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
+from app.core.security import (
+    hash_password,
+    verify_password,
+    create_access_token
+)
+from app.core.database import db
+import logging
 
 router = APIRouter()
-
+logger = logging.getLogger("auth")
 
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
-    confirm_password: str
-
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -16,26 +21,53 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/register")
-async def register_user(payload: RegisterRequest):
-    # Simple safety check for now
-    if payload.password != payload.confirm_password:
-        raise HTTPException(status_code=400, detail="Passwords do not match")
+async def register(payload: RegisterRequest):
+    existing = (
+        db.service_client
+        .table("users")
+        .select("id")
+        .eq("email", payload.email)
+        .execute()
+    )
 
-    # TODO: hook up to real DB / users table
-    # For now we just pretend it succeeded so frontend can move on
-    return {
-        "status": "ok",
-        "message": "Account created (stub). Backend wiring works.",
-        "email": payload.email,
-    }
+    if existing.data:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    hashed = hash_password(payload.password)
+
+    user = (
+        db.service_client
+        .table("users")
+        .insert({
+            "email": payload.email,
+            "password_hash": hashed,
+            "credits": 0
+        })
+        .execute()
+    )
+
+    token = create_access_token({"user_id": user.data[0]["id"]})
+    return {"access_token": token}
 
 
 @router.post("/login")
-async def login_user(payload: LoginRequest):
-    # TODO: real auth. For now just accept anything.
-    return {
-        "status": "ok",
-        "message": "Login successful (stub).",
-        "email": payload.email,
-        "token": "fake-jwt-token"
-    }
+async def login(payload: LoginRequest):
+    result = (
+        db.service_client
+        .table("users")
+        .select("*")
+        .eq("email", payload.email)
+        .single()
+        .execute()
+    )
+
+    if not result.data:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    user = result.data
+
+    if not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    token = create_access_token({"user_id": user["id"]})
+    return {"access_token": token}

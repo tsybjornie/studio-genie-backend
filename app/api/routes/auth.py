@@ -56,26 +56,44 @@ async def register(payload: RegisterRequest):
 
 @router.post("/login")
 async def login(payload: LoginRequest):
-    result = (
-        db.service_client
-        .table("users")
-        .select("id,password_hash")
-        .eq("email", payload.email)
-        .execute()
-    )
+    logger.info(f"Login attempt for {payload.email}")
 
-    if not result.data:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    try:
+        result = (
+            db.service_client
+            .table("users")
+            .select("id, password_hash")
+            .eq("email", payload.email)
+            .execute()
+        )
 
-    user = result.data[0]
+        logger.info(f"DB result: {result}")
 
-    if "password_hash" not in user or not user["password_hash"]:
-        logger.error("password_hash missing for user %s", payload.email)
-        raise HTTPException(status_code=500, detail="Auth misconfiguration")
+        if not result.data:
+            logger.warning("User not found")
+            raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if not verify_password(payload.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        user = result.data[0]
 
-    token = create_access_token({"user_id": user["id"]})
+        if "password_hash" not in user or not user["password_hash"]:
+            logger.error("password_hash missing in DB row")
+            raise HTTPException(status_code=500, detail="User password not set")
 
-    return {"access_token": token, "token_type": "bearer"}
+        if not verify_password(payload.password, user["password_hash"]):
+            logger.warning("Password mismatch")
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        token = create_access_token({"user_id": user["id"]})
+        logger.info("Login success")
+
+        return {
+            "access_token": token,
+            "token_type": "bearer"
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.exception("LOGIN CRASHED")
+        raise HTTPException(status_code=500, detail=str(e))

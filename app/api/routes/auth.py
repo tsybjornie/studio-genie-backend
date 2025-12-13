@@ -73,7 +73,12 @@ async def login(payload: LoginRequest):
             logger.warning("User not found")
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        user = result.data[0]
+        data = result.data
+
+        if isinstance(data, list):
+            user = data[0]
+        else:
+            user = data
 
         if "password_hash" not in user or not user["password_hash"]:
             logger.error("password_hash missing in DB row")

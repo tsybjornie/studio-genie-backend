@@ -1,7 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, EmailStr
+from sqlalchemy.orm import Session
 from app.core.security import hash_password, verify_password, create_access_token
-from app.core.database import db
+from app.core.database import get_db
+from app.models.user import User
 import logging
 
 router = APIRouter()
@@ -19,76 +21,52 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/register")
-async def register(payload: RegisterRequest):
-    existing = (
-        db.service_client
-        .table("users")
-        .select("id")
-        .eq("email", payload.email)
-        .execute()
-    )
-
-    if existing.data:
+async def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    # Check if user exists
+    existing = db.query(User).filter(User.email == payload.email).first()
+    
+    if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
     hashed_password = hash_password(payload.password)
 
-    result = (
-        db.service_client
-        .table("users")
-        .insert({
-            "email": payload.email,
-            "password_hash": hashed_password,
-            "credits": 0
-        })
-        .execute()
+    # Create new user
+    new_user = User(
+        email=payload.email,
+        password_hash=hashed_password,
+        credits=0
     )
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
 
-    if not result.data:
-        logger.error("User insert failed")
-        raise HTTPException(status_code=500, detail="Failed to create user")
-
-    user_id = result.data[0]["id"]
-    token = create_access_token({"user_id": user_id})
+    token = create_access_token({"user_id": new_user.id})
 
     return {"access_token": token, "token_type": "bearer"}
 
 
 @router.post("/login")
-async def login(payload: LoginRequest):
+async def login(payload: LoginRequest, db: Session = Depends(get_db)):
     logger.info(f"Login attempt for {payload.email}")
 
     try:
-        result = (
-            db.service_client
-            .table("users")
-            .select("id, password_hash")
-            .eq("email", payload.email)
-            .execute()
-        )
+        # Query user by email
+        user = db.query(User).filter(User.email == payload.email).first()
 
-        logger.info(f"DB result: {result}")
-
-        if not result.data:
+        if not user:
             logger.warning("User not found")
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        data = result.data
-
-        if isinstance(data, list):
-            user = data[0]
-        else:
-            user = data
-
-        if "password_hash" not in user or not user["password_hash"]:
+        if not user.password_hash:
             logger.error("password_hash missing in DB row")
             raise HTTPException(status_code=500, detail="User password not set")
 
-        if not verify_password(payload.password, user["password_hash"]):
+        if not verify_password(payload.password, user.password_hash):
             logger.warning("Password mismatch")
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        token = create_access_token({"user_id": user["id"]})
+        token = create_access_token({"user_id": user.id})
         logger.info("Login success")
 
         return {

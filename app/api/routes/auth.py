@@ -1,9 +1,7 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
-from sqlalchemy.orm import Session
 from app.core.security import hash_password, verify_password, create_access_token
 from app.core.database import get_db
-from app.models.user import User
 import logging
 
 router = APIRouter()
@@ -21,52 +19,60 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/register")
-async def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+async def register(payload: RegisterRequest):
+    db = get_db()
+    
     # Check if user exists
-    existing = db.query(User).filter(User.email == payload.email).first()
+    existing = db.fetch_one(
+        "SELECT id FROM users WHERE email = %s",
+        (payload.email,)
+    )
     
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
     hashed_password = hash_password(payload.password)
 
-    # Create new user
-    new_user = User(
-        email=payload.email,
-        password_hash=hashed_password,
-        credits=0
+    # Insert new user
+    result = db.fetch_one(
+        "INSERT INTO users (email, password_hash, credits) VALUES (%s, %s, %s) RETURNING id",
+        (payload.email, hashed_password, 0)
     )
-    
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
 
-    token = create_access_token({"user_id": new_user.id})
+    if not result:
+        logger.error("User insert failed")
+        raise HTTPException(status_code=500, detail="Failed to create user")
+
+    token = create_access_token({"user_id": result["id"]})
 
     return {"access_token": token, "token_type": "bearer"}
 
 
 @router.post("/login")
-async def login(payload: LoginRequest, db: Session = Depends(get_db)):
+async def login(payload: LoginRequest):
     logger.info(f"Login attempt for {payload.email}")
+    db = get_db()
 
     try:
         # Query user by email
-        user = db.query(User).filter(User.email == payload.email).first()
+        user = db.fetch_one(
+            "SELECT id, password_hash FROM users WHERE email = %s",
+            (payload.email,)
+        )
 
         if not user:
             logger.warning("User not found")
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        if not user.password_hash:
+        if not user.get("password_hash"):
             logger.error("password_hash missing in DB row")
             raise HTTPException(status_code=500, detail="User password not set")
 
-        if not verify_password(payload.password, user.password_hash):
+        if not verify_password(payload.password, user["password_hash"]):
             logger.warning("Password mismatch")
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        token = create_access_token({"user_id": user.id})
+        token = create_access_token({"user_id": user["id"]})
         logger.info("Login success")
 
         return {

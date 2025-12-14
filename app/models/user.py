@@ -1,16 +1,10 @@
-from sqlalchemy import Column, String, Integer, DateTime, Text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.sql import func
-import uuid
+from pydantic import BaseModel, EmailStr
 
-Base = declarative_base()
+class User(BaseModel):
+    id: str
+    email: EmailStr
+    credits: int = 0
+    stripe_customer_id: str | None = None
 
-class User(Base):
-    __tablename__ = "users"
-
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    email = Column(String, unique=True, nullable=False, index=True)
-    password_hash = Column(Text, nullable=False)
-    credits = Column(Integer, nullable=False, default=0)
-    stripe_customer_id = Column(String, unique=True, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    class Config:
+        from_attributes = True

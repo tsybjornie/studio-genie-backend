@@ -103,7 +103,7 @@ def generate_video_task(self, video_id: str, user_id: str, prompt: str, style: s
         # In production, this would call the MGX API
         video_path = generate_placeholder_video(prompt, style, image_url)
         
-        # Upload to Supabase storage
+        # Upload to storage
         video_url = storage_service.upload_video(video_path, user_id, video_id)
         
         # Update status to done with video URL

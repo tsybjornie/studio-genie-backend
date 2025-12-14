@@ -34,12 +34,9 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    """MGX startup"""
+    """Application startup"""
     logger.info("🚀 Starting Studio Génie API…")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
-
-    # No database table creation (Supabase is schema-first)
-    logger.info("Supabase client initialized.")
 
 # =========================================================
 # SHUTDOWN

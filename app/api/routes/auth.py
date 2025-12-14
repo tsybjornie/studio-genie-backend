@@ -20,69 +20,61 @@ class LoginRequest(BaseModel):
 
 @router.post("/register")
 async def register(payload: RegisterRequest):
-    db = get_db()
-    
-    # Check if user exists
-    existing = db.fetch_one(
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute(
         "SELECT id FROM users WHERE email = %s",
         (payload.email,)
     )
-    
-    if existing:
+    if cur.fetchone():
+        cur.close()
+        conn.close()
         raise HTTPException(status_code=400, detail="Email already registered")
 
     hashed_password = hash_password(payload.password)
 
-    # Insert new user
-    result = db.fetch_one(
-        "INSERT INTO users (email, password_hash, credits) VALUES (%s, %s, %s) RETURNING id",
-        (payload.email, hashed_password, 0)
+    cur.execute(
+        """
+        INSERT INTO users (email, password_hash, credits)
+        VALUES (%s, %s, 0)
+        RETURNING id
+        """,
+        (payload.email, hashed_password)
     )
 
-    if not result:
-        logger.error("User insert failed")
-        raise HTTPException(status_code=500, detail="Failed to create user")
+    user_id = cur.fetchone()["id"]
+    conn.commit()
+    cur.close()
+    conn.close()
 
-    token = create_access_token({"user_id": result["id"]})
-
+    token = create_access_token({"user_id": user_id})
     return {"access_token": token, "token_type": "bearer"}
 
 
 @router.post("/login")
 async def login(payload: LoginRequest):
-    logger.info(f"Login attempt for {payload.email}")
-    db = get_db()
+    conn = get_db()
+    cur = conn.cursor()
 
-    try:
-        # Query user by email
-        user = db.fetch_one(
-            "SELECT id, password_hash FROM users WHERE email = %s",
-            (payload.email,)
-        )
+    cur.execute(
+        "SELECT id, password_hash FROM users WHERE email = %s",
+        (payload.email,)
+    )
+    user = cur.fetchone()
 
-        if not user:
-            logger.warning("User not found")
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not user:
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        if not user.get("password_hash"):
-            logger.error("password_hash missing in DB row")
-            raise HTTPException(status_code=500, detail="User password not set")
+    if not verify_password(payload.password, user["password_hash"]):
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        if not verify_password(payload.password, user["password_hash"]):
-            logger.warning("Password mismatch")
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+    cur.close()
+    conn.close()
 
-        token = create_access_token({"user_id": user["id"]})
-        logger.info("Login success")
-
-        return {
-            "access_token": token,
-            "token_type": "bearer"
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception as e:
-        logger.exception("LOGIN CRASHED")
-        raise HTTPException(status_code=500, detail=str(e))
+    token = create_access_token({"user_id": user["id"]})
+    return {"access_token": token, "token_type": "bearer"}

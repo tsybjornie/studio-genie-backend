@@ -18,9 +18,9 @@ class Settings(BaseSettings):
     # ==============================
     # JWT CONFIG
     # ==============================
-    JWT_SECRET: str
-    JWT_EXPIRES_IN: str = "7d"
-    JWT_ALGORITHM: str = "HS256"
+    SECRET_KEY: str
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10080  # 7 days
 
     # ==============================
     # STRIPE CONFIG

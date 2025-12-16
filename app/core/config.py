@@ -6,7 +6,6 @@ class Settings(BaseSettings):
     # CORE APP SETTINGS
     # ==============================
     ENVIRONMENT: str = "production"
-    SECRET_KEY: str
     APP_URL: str = "http://localhost:3000"
     FRONTEND_URL: str = "https://studio-genie-frontend-lua0ipmge-chamoreio.vercel.app"
 

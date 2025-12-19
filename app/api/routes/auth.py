@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
 from app.core.database import get_connection
+from app.core.security import hash_password, verify_password, create_access_token
 import traceback
 import logging
 
@@ -22,13 +23,9 @@ class LoginRequest(BaseModel):
 @router.post("/register")
 def register(data: RegisterRequest):
     try:
-        import bcrypt
         from datetime import datetime
 
-        password_hash = bcrypt.hashpw(
-            data.password.encode("utf-8"),
-            bcrypt.gensalt()
-        ).decode("utf-8")
+        hashed_password = hash_password(data.password)
 
         conn = get_connection()
         cur = conn.cursor()
@@ -39,13 +36,16 @@ def register(data: RegisterRequest):
             VALUES (%s, %s, %s, %s)
             RETURNING id
             """,
-            (data.email, password_hash, 0, datetime.utcnow())
+            (data.email, hashed_password, 0, datetime.utcnow())
         )
 
         user_id = cur.fetchone()["id"]
         conn.commit()
+        cur.close()
+        conn.close()
 
-        return {"id": user_id, "email": data.email}
+        token = create_access_token({"user_id": user_id})
+        return {"access_token": token, "token_type": "bearer"}
 
     except Exception as e:
         logging.error("REGISTER ERROR")
@@ -56,10 +56,6 @@ def register(data: RegisterRequest):
 @router.post("/login")
 def login(data: LoginRequest):
     try:
-        import bcrypt
-        from jose import jwt
-        import os
-
         conn = get_connection()
         cur = conn.cursor()
 
@@ -70,29 +66,23 @@ def login(data: LoginRequest):
         user = cur.fetchone()
 
         if not user:
+            cur.close()
+            conn.close()
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        user_id, email, password_hash = user
-
-        if not bcrypt.checkpw(
-            data.password.encode("utf-8"),
-            password_hash.encode("utf-8")
-        ):
+        if not verify_password(data.password, user["password_hash"]):
+            cur.close()
+            conn.close()
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        SECRET_KEY = os.getenv("JWT_SECRET", "dev-secret-change-me")
+        cur.close()
+        conn.close()
 
-        token = jwt.encode(
-            {"sub": email},
-            SECRET_KEY,
-            algorithm="HS256"
-        )
+        token = create_access_token({"user_id": user["id"]})
+        return {"access_token": token, "token_type": "bearer"}
 
-        return {
-            "access_token": token,
-            "token_type": "bearer"
-        }
-
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error("LOGIN ERROR")
         logging.error(traceback.format_exc())

@@ -42,7 +42,7 @@ def register(data: RegisterRequest):
             (data.email, password_hash, 0, datetime.utcnow())
         )
 
-        user_id = cur.fetchone()[0]
+        user_id = cur.fetchone()["id"]
         conn.commit()
 
         return {"id": user_id, "email": data.email}
@@ -57,7 +57,7 @@ def register(data: RegisterRequest):
 def login(data: LoginRequest):
     try:
         import bcrypt
-        import jwt
+        from jose import jwt
         import os
 
         conn = get_connection()

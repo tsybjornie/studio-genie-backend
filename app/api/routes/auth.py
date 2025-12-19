@@ -20,36 +20,44 @@ class LoginRequest(BaseModel):
 
 @router.post("/register")
 async def register(payload: RegisterRequest):
-    conn = get_connection()
-    cur = conn.cursor()
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
 
-    cur.execute(
-        "SELECT id FROM users WHERE email = %s",
-        (payload.email,)
-    )
-    if cur.fetchone():
+        cur.execute(
+            "SELECT id FROM users WHERE email = %s",
+            (payload.email,)
+        )
+        if cur.fetchone():
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+        hashed_password = hash_password(payload.password)
+
+        cur.execute(
+            """
+            INSERT INTO users (email, hashed_password, credits_remaining)
+            VALUES (%s, %s, 0)
+            RETURNING id
+            """,
+            (payload.email, hashed_password)
+        )
+
+        user_id = cur.fetchone()["id"]
+        conn.commit()
         cur.close()
         conn.close()
-        raise HTTPException(status_code=400, detail="Email already registered")
 
-    hashed_password = hash_password(payload.password)
-
-    cur.execute(
-        """
-        INSERT INTO users (email, hashed_password, credits_remaining)
-        VALUES (%s, %s, 0)
-        RETURNING id
-        """,
-        (payload.email, hashed_password)
-    )
-
-    user_id = cur.fetchone()["id"]
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    token = create_access_token({"user_id": user_id})
-    return {"access_token": token, "token_type": "bearer"}
+        token = create_access_token({"user_id": user_id})
+        return {"access_token": token, "token_type": "bearer"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"REGISTER ERROR: {type(e).__name__}: {str(e)}")
+        logger.error(f"Register failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/login")

@@ -36,7 +36,7 @@ async def register(payload: RegisterRequest):
 
     cur.execute(
         """
-        INSERT INTO users (email, password_hash, credits)
+        INSERT INTO users (email, hashed_password, credits_remaining)
         VALUES (%s, %s, 0)
         RETURNING id
         """,
@@ -58,7 +58,7 @@ async def login(payload: LoginRequest):
     cur = conn.cursor()
 
     cur.execute(
-        "SELECT id, password_hash FROM users WHERE email = %s",
+        "SELECT id, hashed_password FROM users WHERE email = %s",
         (payload.email,)
     )
     user = cur.fetchone()
@@ -68,7 +68,7 @@ async def login(payload: LoginRequest):
         conn.close()
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if not verify_password(payload.password, user["password_hash"]):
+    if not verify_password(payload.password, user["hashed_password"]):
         cur.close()
         conn.close()
         raise HTTPException(status_code=401, detail="Invalid credentials")

@@ -1,4 +1,4 @@
-from app.core.database import get_db
+from app.core.database import get_connection
 from app.core.config import settings
 from fastapi import HTTPException
 import uuid
@@ -10,9 +10,6 @@ logger = logging.getLogger(__name__)
 
 class VideoService:
     """Service for managing video generation and retrieval"""
-    
-    def __init__(self):
-        self.db = get_db()
     
     def create_video_record(self, user_id: str, prompt: str, style: str, image_url: str = None) -> dict:
         """
@@ -29,23 +26,28 @@ class VideoService:
         """
         try:
             video_id = str(uuid.uuid4())
+            created_at = datetime.utcnow()
             
-            video_data = {
-                'id': video_id,
-                'user_id': user_id,
-                'prompt': prompt,
-                'style': style,
-                'image_url': image_url,
-                'status': 'queued',
-                'video_url': None,
-                'created_at': datetime.utcnow().isoformat()
-            }
+            conn = get_connection()
+            cur = conn.cursor()
             
-            response = self.db.service_client.table('videos').insert(video_data).execute()
+            cur.execute(
+                """
+                INSERT INTO videos (id, user_id, prompt, style, image_url, status, video_url, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, user_id, prompt, style, image_url, status, video_url, created_at
+                """,
+                (video_id, user_id, prompt, style, image_url, 'queued', None, created_at)
+            )
+            
+            video_record = cur.fetchone()
+            conn.commit()
+            cur.close()
+            conn.close()
             
             logger.info(f"Created video record {video_id} for user {user_id}")
             
-            return response.data[0]
+            return dict(video_record)
         except Exception as e:
             logger.error(f"Error creating video record: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to create video record")
@@ -63,18 +65,38 @@ class VideoService:
             Updated video record
         """
         try:
-            update_data = {'status': status}
+            conn = get_connection()
+            cur = conn.cursor()
             
             if video_url:
-                update_data['video_url'] = video_url
+                cur.execute(
+                    """
+                    UPDATE videos 
+                    SET status = %s, video_url = %s
+                    WHERE id = %s
+                    RETURNING id, user_id, prompt, style, image_url, status, video_url, created_at
+                    """,
+                    (status, video_url, video_id)
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE videos 
+                    SET status = %s
+                    WHERE id = %s
+                    RETURNING id, user_id, prompt, style, image_url, status, video_url, created_at
+                    """,
+                    (status, video_id)
+                )
             
-            response = self.db.service_client.table('videos').update(
-                update_data
-            ).eq('id', video_id).execute()
+            video_record = cur.fetchone()
+            conn.commit()
+            cur.close()
+            conn.close()
             
             logger.info(f"Updated video {video_id} status to {status}")
             
-            return response.data[0] if response.data else None
+            return dict(video_record) if video_record else None
         except Exception as e:
             logger.error(f"Error updating video status: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to update video status")
@@ -91,17 +113,28 @@ class VideoService:
             Video record
         """
         try:
-            query = self.db.service_client.table('videos').select('*').eq('id', video_id)
+            conn = get_connection()
+            cur = conn.cursor()
             
             if user_id:
-                query = query.eq('user_id', user_id)
+                cur.execute(
+                    "SELECT * FROM videos WHERE id = %s AND user_id = %s",
+                    (video_id, user_id)
+                )
+            else:
+                cur.execute(
+                    "SELECT * FROM videos WHERE id = %s",
+                    (video_id,)
+                )
             
-            response = query.execute()
+            video_record = cur.fetchone()
+            cur.close()
+            conn.close()
             
-            if not response.data:
+            if not video_record:
                 raise HTTPException(status_code=404, detail="Video not found")
             
-            return response.data[0]
+            return dict(video_record)
         except HTTPException:
             raise
         except Exception as e:
@@ -121,11 +154,24 @@ class VideoService:
             List of video records
         """
         try:
-            response = self.db.service_client.table('videos').select('*').eq(
-                'user_id', user_id
-            ).order('created_at', desc=True).range(offset, offset + limit - 1).execute()
+            conn = get_connection()
+            cur = conn.cursor()
             
-            return response.data
+            cur.execute(
+                """
+                SELECT * FROM videos 
+                WHERE user_id = %s 
+                ORDER BY created_at DESC 
+                LIMIT %s OFFSET %s
+                """,
+                (user_id, limit, offset)
+            )
+            
+            videos = cur.fetchall()
+            cur.close()
+            conn.close()
+            
+            return [dict(video) for video in videos]
         except Exception as e:
             logger.error(f"Error fetching user videos: {str(e)}")
             raise HTTPException(status_code=500, detail="Failed to fetch videos")
@@ -143,10 +189,19 @@ class VideoService:
         """
         try:
             # Verify ownership
-            video = self.get_video(video_id, user_id)
+            self.get_video(video_id, user_id)
             
-            # Delete from database
-            response = self.db.service_client.table('videos').delete().eq('id', video_id).execute()
+            conn = get_connection()
+            cur = conn.cursor()
+            
+            cur.execute(
+                "DELETE FROM videos WHERE id = %s",
+                (video_id,)
+            )
+            
+            conn.commit()
+            cur.close()
+            conn.close()
             
             logger.info(f"Deleted video {video_id}")
             

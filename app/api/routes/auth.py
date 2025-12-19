@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
 from app.core.security import hash_password, verify_password, create_access_token
-from app.core.database import get_db
+from app.core.database import get_connection
 import logging
 
 router = APIRouter()
@@ -20,7 +20,7 @@ class LoginRequest(BaseModel):
 
 @router.post("/register")
 async def register(payload: RegisterRequest):
-    conn = get_db()
+    conn = get_connection()
     cur = conn.cursor()
 
     cur.execute(
@@ -54,7 +54,7 @@ async def register(payload: RegisterRequest):
 
 @router.post("/login")
 async def login(payload: LoginRequest):
-    conn = get_db()
+    conn = get_connection()
     cur = conn.cursor()
 
     cur.execute(

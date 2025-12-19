@@ -11,7 +11,6 @@ from app.schemas.video_schemas import (
 )
 from app.core.security import get_current_user
 from app.core.config import settings
-from app.core.database import get_db
 from app.services.credit_service import credit_service
 from app.services.video_service import video_service
 from app.services.billing_service import billing_service
@@ -51,8 +50,7 @@ async def assert_user_has_access(user):
 @router.post("/generate", response_model=VideoGenerateResponse)
 async def generate_video(
     request: VideoGenerateRequest,
-    current_user: dict = Depends(get_current_user),
-    db=Depends(get_db)
+    current_user: dict = Depends(get_current_user)
 ):
     """
     v2 Logic:
@@ -86,7 +84,6 @@ async def generate_video(
         # 3. DEDUCT CREDITS
         # ---------------------------------------------------
         new_balance = credit_service.deduct_credits(
-            db=db,
             user_id=user_id,
             amount=COST
         )

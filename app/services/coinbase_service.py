@@ -7,7 +7,7 @@ import requests
 from fastapi import HTTPException
 
 from app.core.config import settings
-from app.core.database import db
+from app.core.database import get_connection
 from app.services.credit_service import credit_service
 
 logger = logging.getLogger(__name__)
@@ -179,16 +179,19 @@ class CoinbaseService:
 
         # Log in payments table (optional but recommended)
         try:
-            db.service_client.table("payments").insert(
-                {
-                    "user_id": user_id,
-                    "provider": "coinbase",
-                    "amount": base_credits,
-                    "bonus": bonus_credits,
-                    "total_credits": total_credits,
-                    "status": "confirmed",
-                }
-            ).execute()
+            conn = get_connection()
+            cur = conn.cursor()
+            
+            cur.execute(
+                """
+                INSERT INTO payments (user_id, provider, amount, bonus, total_credits, status)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (user_id, "coinbase", base_credits, bonus_credits, total_credits, "confirmed")
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
         except Exception as e:
             # Don't murder the webhook if logging fails
             logger.error(f"[COINBASE] Failed to log payment: {str(e)}")

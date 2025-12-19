@@ -33,15 +33,15 @@ async def register(payload: RegisterRequest):
             conn.close()
             raise HTTPException(status_code=400, detail="Email already registered")
 
-        hashed_password = hash_password(payload.password)
+        password_hash = hash_password(payload.password)
 
         cur.execute(
             """
-            INSERT INTO users (email, hashed_password, credits_remaining)
+            INSERT INTO users (email, password_hash, credits)
             VALUES (%s, %s, 0)
             RETURNING id
             """,
-            (payload.email, hashed_password)
+            (payload.email, password_hash)
         )
 
         user_id = cur.fetchone()["id"]
@@ -66,7 +66,7 @@ async def login(payload: LoginRequest):
     cur = conn.cursor()
 
     cur.execute(
-        "SELECT id, hashed_password FROM users WHERE email = %s",
+        "SELECT id, password_hash FROM users WHERE email = %s",
         (payload.email,)
     )
     user = cur.fetchone()
@@ -76,7 +76,7 @@ async def login(payload: LoginRequest):
         conn.close()
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if not verify_password(payload.password, user["hashed_password"]):
+    if not verify_password(payload.password, user["password_hash"]):
         cur.close()
         conn.close()
         raise HTTPException(status_code=401, detail="Invalid credentials")

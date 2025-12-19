@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
-from app.core.security import hash_password, verify_password, create_access_token
+from app.core.security import hash_password, create_access_token
 from app.core.database import get_connection
 import logging
+import bcrypt
 
 router = APIRouter()
 logger = logging.getLogger("auth")
@@ -76,7 +77,10 @@ async def login(payload: LoginRequest):
         conn.close()
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if not verify_password(payload.password, user["password_hash"]):
+    if not bcrypt.checkpw(
+        payload.password.encode("utf-8"),
+        user["password_hash"].encode("utf-8")
+    ):
         cur.close()
         conn.close()
         raise HTTPException(status_code=401, detail="Invalid credentials")

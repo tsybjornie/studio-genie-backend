@@ -6,12 +6,15 @@ from .subscription_change import router as subscription_change_router
 from .options import router as options_router
 from .users import router as users_router
 from .videos import router as videos_router
+from .me import router as me_router
 
 def init_routes(app: FastAPI):
     # Global OPTIONS handler (must be first)
     app.include_router(options_router)
     # Auth
     app.include_router(auth_router, prefix="/auth", tags=["Auth"])
+    # Me (combined dashboard endpoint)
+    app.include_router(me_router, prefix="/me", tags=["Me"])
     # Users
     app.include_router(users_router, prefix="/users", tags=["Users"])
     # Videos

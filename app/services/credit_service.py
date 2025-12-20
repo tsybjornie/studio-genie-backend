@@ -18,12 +18,13 @@ SUBSCRIPTION_CREDIT_MAP = {
 
 # ============================================
 #   CREDIT PACKS (ONE-TIME PURCHASES)
+#   Single Source of Truth for Stripe Price -> Credits
 # ============================================
 
-CREDIT_PACK_PRICE_MAP = {
-    "price_1SdZ5QBBwifSvpdIWW1Ntt22": 30,    # Small - $25
-    "price_1SdZ7TBBwifSvpdIAZqbTuLR": 100,   # Medium - $65
-    "price_1SdZ7xBBwifSvpdI1B6BjybU": 300,   # Power - $119
+PRICE_ID_TO_CREDITS = {
+    "price_1SdZ5QBBwifSvpdIWW1Ntt22": 9,    # Small - $25
+    "price_1SdZ7TBBwifSvpdIAZqbTuLR": 30,   # Medium - $65
+    "price_1SdZ7xBBwifSvpdI1B6BjybU": 90,   # Power - $119
 }
 
 
@@ -72,13 +73,13 @@ class CreditService:
         
         Args:
             user_id: User ID to credit
-            price_id: Stripe price ID from webhook
+            price_id: Stripe price ID from webhook (cryptographically verified)
         """
         user = User.get(user_id)
         if not user:
             raise Exception("User not found")
 
-        credits = CREDIT_PACK_PRICE_MAP.get(price_id)
+        credits = PRICE_ID_TO_CREDITS.get(price_id)
         if credits is None:
             logger.warning(f"[CREDIT PACK] Unknown price_id={price_id}")
             return False

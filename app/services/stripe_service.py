@@ -14,20 +14,6 @@ STRIPE_PRICE_SUBSCRIPTIONS = {
     "pro":     "price_1SV4vLBBwifSvpdIYZlLeYJ6",
 }
 
-STRIPE_PRICE_CREDIT_PACKS = {
-    "30":   "price_1SWew0BBwifSvpdIushlBKMf",
-    "100":  "price_1SWewfBBwifSvpdIplolWgJo",
-    "300":  "price_1SWexdBBwifSvpdIqtX4C8uT",
-    "1000": "price_1SWf2EBBwifSvpdILOY6TB9U",
-}
-
-CREDIT_PACK_AMOUNTS = {
-    "30": 30,
-    "100": 100,
-    "300": 300,
-    "1000": 1000,
-}
-
 
 class StripeService:
     # CREATE CHECKOUT SESSION
@@ -62,12 +48,13 @@ class StripeService:
 
     # CHECKOUT COMPLETED
     def handle_checkout_completed(self, session):
+        """Handle successful checkout - route to appropriate service."""
         user_id = session.get("client_reference_id")
 
         try:
             price_id = session["line_items"]["data"][0]["price"]["id"]
-        except:
-            logger.error("[STRIPE] Missing line_items")
+        except Exception:
+            logger.error("[STRIPE] Missing line_items in checkout.session.completed")
             return
 
         # Subscription
@@ -75,11 +62,8 @@ class StripeService:
             billing_service.activate_subscription(user_id, price_id)
             return
 
-        # Credit Pack
-        for pack, pid in STRIPE_PRICE_CREDIT_PACKS.items():
-            if price_id == pid:
-                billing_service.add_credits(user_id, CREDIT_PACK_AMOUNTS[pack])
-                return
+        # Credit pack (delegated to CreditService via BillingService)
+        billing_service.apply_credit_pack(user_id, price_id)
 
     # RENEWAL
     def handle_subscription_renewal(self, invoice):

@@ -142,4 +142,20 @@ class BillingService:
             raise e
 
 
+
+    def apply_credit_pack(self, user_id: str, price_id: str):
+        """Apply credit pack purchase - delegates to CreditService.
+        
+        Args:
+            user_id: User ID to credit
+            price_id: Stripe price ID from webhook
+        
+        Returns:
+            bool: True if credits were applied successfully
+        """
+        from app.services.credit_service import credit_service
+        return credit_service.apply_credit_pack(user_id, price_id)
+
+
 billing_service = BillingService()
+

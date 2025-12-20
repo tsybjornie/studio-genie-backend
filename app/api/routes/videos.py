@@ -6,49 +6,12 @@ router = APIRouter()
 
 
 @router.get("")
-async def get_videos(current_user: dict = Depends(get_current_user)):
+async def get_videos():
     """
     Get all videos for current user.
-    Returns list of videos with status, created_at, etc.
+    Stub endpoint - returns empty list.
     """
-    user_id = current_user.get("user_id")
-    
-    conn = get_connection()
-    cur = conn.cursor()
-    
-    try:
-        cur.execute(
-            """
-            SELECT id, prompt, status, video_url, created_at, image_url, style
-            FROM videos
-            WHERE user_id = %s
-            ORDER BY created_at DESC
-            """,
-            (user_id,)
-        )
-        rows = cur.fetchall()
-        
-        cur.close()
-        conn.close()
-        
-        videos = []
-        for row in rows:
-            videos.append({
-                "id": row["id"],
-                "prompt": row.get("prompt"),
-                "status": row.get("status", "queued"),
-                "output_url": row.get("video_url"),
-                "created_at": row.get("created_at").isoformat() if row.get("created_at") else None,
-                "image_url": row.get("image_url"),
-                "style": row.get("style")
-            })
-        
-        return videos
-        
-    except Exception as e:
-        cur.close()
-        conn.close()
-        raise
+    return []
 
 
 @router.post("")

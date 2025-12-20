@@ -17,14 +17,13 @@ SUBSCRIPTION_CREDIT_MAP = {
 }
 
 # ============================================
-#   OPTIONAL CREDIT PACKS
+#   CREDIT PACKS (ONE-TIME PURCHASES)
 # ============================================
 
-CREDIT_PACK_AMOUNTS = {
-    "30": {"credits": 30, "price_usd": 12},
-    "100": {"credits": 100, "price_usd": 35},
-    "300": {"credits": 300, "price_usd": 90},
-    "1000": {"credits": 1000, "price_usd": 250},
+CREDIT_PACK_PRICE_MAP = {
+    "price_1SdZ5QBBwifSvpdIWW1Ntt22": 30,    # Small - $25
+    "price_1SdZ7TBBwifSvpdIAZqbTuLR": 100,   # Medium - $65
+    "price_1SdZ7xBBwifSvpdI1B6BjybU": 300,   # Power - $119
 }
 
 
@@ -68,20 +67,26 @@ class CreditService:
     # -----------------------------------
     # Apply one-time purchased credit pack
     # -----------------------------------
-    def apply_credit_pack(self, user_id: str, pack_key: str):
+    def apply_credit_pack(self, user_id: str, price_id: str):
+        """Apply credits from a one-time credit pack purchase.
+        
+        Args:
+            user_id: User ID to credit
+            price_id: Stripe price ID from webhook
+        """
         user = User.get(user_id)
         if not user:
             raise Exception("User not found")
 
-        if pack_key not in CREDIT_PACK_AMOUNTS:
-            raise Exception("Invalid credit pack")
+        credits = CREDIT_PACK_PRICE_MAP.get(price_id)
+        if credits is None:
+            logger.warning(f"[CREDIT PACK] Unknown price_id={price_id}")
+            return False
 
-        amount = CREDIT_PACK_AMOUNTS[pack_key]["credits"]
-
-        user.credits += amount
+        user.credits += credits
         user.save()
 
-        logger.info(f"[CREDIT PACK] +{amount} credits added to {user.email}")
+        logger.info(f"[CREDIT PACK] +{credits} credits added to {user.email}")
         return True
 
     # --------------

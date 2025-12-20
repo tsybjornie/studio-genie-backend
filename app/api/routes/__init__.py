@@ -4,12 +4,18 @@ from .billing import router as billing_router
 from .billing_webhook import router as billing_webhook_router
 from .subscription_change import router as subscription_change_router
 from .options import router as options_router
+from .users import router as users_router
+from .videos import router as videos_router
 
 def init_routes(app: FastAPI):
     # Global OPTIONS handler (must be first)
     app.include_router(options_router)
     # Auth
     app.include_router(auth_router, prefix="/auth", tags=["Auth"])
+    # Users
+    app.include_router(users_router, prefix="/users", tags=["Users"])
+    # Videos
+    app.include_router(videos_router, prefix="/videos", tags=["Videos"])
     # Billing
     app.include_router(billing_router, prefix="/billing", tags=["Billing"])
     # Webhooks

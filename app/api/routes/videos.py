@@ -1,212 +1,114 @@
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import RedirectResponse
-from typing import List
-import logging
-
-from app.schemas.video_schemas import (
-    VideoGenerateRequest,
-    VideoGenerateResponse,
-    VideoListResponse,
-    VideoDetailResponse
-)
+from fastapi import APIRouter, Depends
+from app.core.database import get_connection
 from app.core.security import get_current_user
-from app.core.config import settings
-from app.services.credit_service import credit_service
-from app.services.video_service import video_service
-from app.services.billing_service import billing_service
 
-logger = logging.getLogger(__name__)
-
-router = APIRouter(prefix="/videos", tags=["Videos"])
+router = APIRouter()
 
 
-# -----------------------------------------------------------
-# ACCESS CHECK — ENFORCE SUBSCRIPTIONS & CREDITS
-# -----------------------------------------------------------
-async def assert_user_has_access(user):
+@router.get("")
+async def get_videos(current_user: dict = Depends(get_current_user)):
     """
-    Prevent free users from generating unlimited videos.
+    Get all videos for current user.
+    Returns list of videos with status, created_at, etc.
     """
-
-    # ⭐ If user has an active subscription → allow (credits may still apply)
-    if user.get("subscription_status") == "active":
-        return
-
-    # ⭐ If user has credits → allow
-    credits = user.get("credits_remaining", 0)
-    if credits > 0:
-        return
-
-    # ⭐ Free user with 0 credits → block
-    raise HTTPException(
-        status_code=402,  # Payment Required
-        detail="Not enough credits. Please upgrade or purchase credits."
-    )
-
-
-# -----------------------------------------------------------
-# GENERATE VIDEO
-# -----------------------------------------------------------
-@router.post("/generate", response_model=VideoGenerateResponse)
-async def generate_video(
-    request: VideoGenerateRequest,
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    v2 Logic:
-    - Check subscription OR credits
-    - If subscription active → discount
-    - Deduct credits
-    - Create video DB entry
-    - Start MGX generation process
-    """
-
+    user_id = current_user.get("user_id")
+    
+    conn = get_connection()
+    cur = conn.cursor()
+    
     try:
-        user_id = current_user["id"]
-
-        # ---------------------------------------------------
-        # 1. ACCESS CONTROL (subscription or credits)
-        # ---------------------------------------------------
-        await assert_user_has_access(current_user)
-
-        # ---------------------------------------------------
-        # 2. COST CALCULATION
-        # ---------------------------------------------------
-        BASE_COST = settings.CREDITS_PER_VIDEO  # usually 5 credits
-
-        # Discount for subscription users
-        if current_user.get("subscription_status") == "active":
-            COST = max(1, BASE_COST // 2)  # 50% discount
-        else:
-            COST = BASE_COST
-
-        # ---------------------------------------------------
-        # 3. DEDUCT CREDITS
-        # ---------------------------------------------------
-        new_balance = credit_service.deduct_credits(
-            user_id=user_id,
-            amount=COST
+        cur.execute(
+            """
+            SELECT id, prompt, status, video_url, created_at, image_url, style
+            FROM videos
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+            """,
+            (user_id,)
         )
-
-        logger.info(f"[CREDITS] Deducted {COST} from {user_id}. Remaining={new_balance}")
-
-        # ---------------------------------------------------
-        # 4. CREATE VIDEO RECORD
-        # ---------------------------------------------------
-        video = video_service.create_video_record(
-            user_id=user_id,
-            prompt=request.prompt,
-            style=request.style,
-            image_url=request.image_url
-        )
-
-        video_id = video["id"]
-
-        # ---------------------------------------------------
-        # 5. START MGX GENERATION (background orchestration)
-        # ---------------------------------------------------
-        from app.workers.video_generation import start_generation_task
-
-        start_generation_task.delay(
-            video_id=video_id,
-            user_id=user_id,
-            prompt=request.prompt,
-            style=request.style,
-            image_url=request.image_url
-        )
-
-        return VideoGenerateResponse(
-            job_id=video_id,
-            video_id=video_id,
-            status="queued",
-            message="Video generation started.",
-            credits_used=COST,
-            credits_remaining=new_balance
-        )
-
-    except HTTPException:
+        rows = cur.fetchall()
+        
+        cur.close()
+        conn.close()
+        
+        videos = []
+        for row in rows:
+            videos.append({
+                "id": row["id"],
+                "prompt": row.get("prompt"),
+                "status": row.get("status", "queued"),
+                "output_url": row.get("video_url"),
+                "created_at": row.get("created_at").isoformat() if row.get("created_at") else None,
+                "image_url": row.get("image_url"),
+                "style": row.get("style")
+            })
+        
+        return videos
+        
+    except Exception as e:
+        cur.close()
+        conn.close()
         raise
 
-    except Exception as e:
-        logger.error(f"Video generation error: {str(e)}")
-        raise HTTPException(500, "Failed to generate video")
 
-
-# -----------------------------------------------------------
-# LIST VIDEOS
-# -----------------------------------------------------------
-@router.get("", response_model=List[VideoListResponse])
-async def list_videos(
-    limit: int = 50,
-    offset: int = 0,
+@router.post("")
+async def create_video(
+    payload: dict,
     current_user: dict = Depends(get_current_user)
 ):
+    """
+    Create a new video generation request.
+    Deducts 3 credits and creates video record.
+    """
+    user_id = current_user.get("user_id")
+    script = payload.get("script", "")
+    language = payload.get("language", "en")
+    
+    if not script:
+        return {"error": "Script is required"}, 400
+    
+    conn = get_connection()
+    cur = conn.cursor()
+    
     try:
-        videos = video_service.get_user_videos(current_user["id"], limit, offset)
-
-        return [
-            VideoListResponse(
-                id=v["id"],
-                prompt=v["prompt"],
-                style=v["style"],
-                status=v["status"],
-                video_url=v.get("video_url"),
-                created_at=v["created_at"],
-            )
-            for v in videos
-        ]
-
-    except Exception as e:
-        logger.error(f"Error listing videos: {str(e)}")
-        raise HTTPException(500, "Failed to list videos")
-
-
-# -----------------------------------------------------------
-# VIDEO DETAILS
-# -----------------------------------------------------------
-@router.get("/{video_id}", response_model=VideoDetailResponse)
-async def get_video(
-    video_id: str,
-    current_user: dict = Depends(get_current_user)
-):
-    try:
-        video = video_service.get_video(video_id, current_user["id"])
-
-        return VideoDetailResponse(
-            id=video["id"],
-            user_id=video["user_id"],
-            prompt=video["prompt"],
-            style=video["style"],
-            image_url=video.get("image_url"),
-            status=video["status"],
-            video_url=video.get("video_url"),
-            created_at=video["created_at"]
+        # Check credits
+        cur.execute(
+            "SELECT credits FROM users WHERE id = %s",
+            (user_id,)
         )
-
+        user = cur.fetchone()
+        
+        if not user or user.get("credits", 0) < 3:
+            cur.close()
+            conn.close()
+            return {"error": "Not enough credits"}, 400
+        
+        # Deduct credits
+        cur.execute(
+            "UPDATE users SET credits = credits - 3 WHERE id = %s",
+            (user_id,)
+        )
+        
+        # Create video record
+        cur.execute(
+            """
+            INSERT INTO videos (user_id, prompt, status, style)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+            """,
+            (user_id, script, "queued", language)
+        )
+        
+        video_id = cur.fetchone()["id"]
+        conn.commit()
+        
+        cur.close()
+        conn.close()
+        
+        return {"id": video_id, "status": "queued"}
+        
     except Exception as e:
-        logger.error(f"Error fetching video: {str(e)}")
-        raise HTTPException(500, "Failed to fetch video")
-
-
-# -----------------------------------------------------------
-# DOWNLOAD FINISHED VIDEO
-# -----------------------------------------------------------
-@router.get("/{video_id}/download")
-async def download_video(
-    video_id: str,
-    current_user: dict = Depends(get_current_user)
-):
-    try:
-        video = video_service.get_video(video_id, current_user["id"])
-
-        if video["status"] != "done":
-            raise HTTPException(400, "Video is not ready yet.")
-
-        if not video.get("video_url"):
-            raise HTTPException(404, "Video file not found.")
-
-        return RedirectResponse(url=video["video_url"])
-
-    except Exception as e:
-        logger.error(f"Download error: {str(e)}")
-        raise HTTPException(500, "Failed to download video")
+        conn.rollback()
+        cur.close()
+        conn.close()
+        raise

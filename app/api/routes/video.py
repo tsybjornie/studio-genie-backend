@@ -68,14 +68,16 @@ async def generate_video(
     )
     conn.commit()
 
-    # 4️⃣ Generate fake video
+    # 4️⃣ Generate video
     try:
-        video_url = await mock_provider.generate(prompt, duration_seconds)
+        result = await mock_provider.generate(prompt, duration_seconds)
         job.status = "completed"
-        job.video_url = video_url
+        job.video_url = result["video_url"]
+        thumbnail_url = result.get("thumbnail_url")
     except Exception as e:
         job.status = "failed"
         job.error = str(e)
+        thumbnail_url = None
 
     job.updated_at = datetime.utcnow()
     
@@ -86,6 +88,8 @@ async def generate_video(
         "job_id": job.id,
         "status": job.status,
         "video_url": job.video_url,
+        "thumbnail_url": thumbnail_url,
+        "duration": duration_seconds,
         "credits_used": required,
         "credits_left": new_credits,
     }

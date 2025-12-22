@@ -2,19 +2,20 @@ import os
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    # App
-    APP_NAME: str = "Studio Génie API"
-    ENV: str = "development"
-    DEBUG: bool = True
-    
-    # Testing
-    TEST_MODE: bool = False  # Set to True to disable auto-credit logic
-    
-    # Database
-    DATABASE_URL: str = "production"
+    # ==============================
+    # CORE APP SETTINGS
+    # ==============================
+    ENVIRONMENT: str = "production"
     APP_URL: str = "http://localhost:3000"
     FRONTEND_URL: str = "https://studio-genie-frontend-lua0ipmge-chamoreio.vercel.app"
+    
+    # ==============================
+    # TESTING
+    # ==============================
+    TEST_MODE: bool = False  # Set to True to disable auto-credit logic
 
+    # ==============================
+    # DATABASE (POSTGRESQL)
     # ==============================
     DATABASE_URL: str
 
@@ -52,19 +53,17 @@ class Settings(BaseSettings):
         Required by FastAPI middleware.
         Converts CSV string → Python list.
         Works for:
-            "*" 
-            "http://localhost:3000"
-            "http://a.com, http://b.com"
+          - Single: "https://a.com"
+          - Multiple: "https://a.com,https://b.com"
+          - Wildcard: "*"
         """
-        if self.CORS_ORIGINS == "*" or self.CORS_ORIGINS.strip() == "":
+        if self.CORS_ORIGINS == "*":
             return ["*"]
-
-        # split comma-separated values
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
+        return [o.strip() for o in self.CORS_ORIGINS.split(",")]
 
     class Config:
         env_file = ".env"
-        extra = "ignore"
+        case_sensitive = True
 
 
 settings = Settings()

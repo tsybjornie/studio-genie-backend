@@ -8,6 +8,7 @@ from .users import router as users_router
 from .videos import router as videos_router
 from .video import router as video_router
 from .me import router as me_router
+from .admin import router as admin_router
 
 def init_routes(app: FastAPI):
     # Global OPTIONS handler (must be first)
@@ -28,5 +29,7 @@ def init_routes(app: FastAPI):
     app.include_router(billing_webhook_router)  # 🔥 REQUIRED
     # Subscription Change
     app.include_router(subscription_change_router)
+    # Admin (testing only)
+    app.include_router(admin_router)
 
 

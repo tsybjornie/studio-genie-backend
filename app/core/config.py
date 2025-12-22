@@ -2,15 +2,19 @@ import os
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    # ==============================
-    # CORE APP SETTINGS
-    # ==============================
-    ENVIRONMENT: str = "production"
+    # App
+    APP_NAME: str = "Studio Génie API"
+    ENV: str = "development"
+    DEBUG: bool = True
+    
+    # Testing
+    TEST_MODE: bool = False  # Set to True to disable auto-credit logic
+    
+    # Database
+    DATABASE_URL: str = "production"
     APP_URL: str = "http://localhost:3000"
     FRONTEND_URL: str = "https://studio-genie-frontend-lua0ipmge-chamoreio.vercel.app"
 
-    # ==============================
-    # DATABASE (POSTGRESQL)
     # ==============================
     DATABASE_URL: str
 

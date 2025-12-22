@@ -50,6 +50,11 @@ class CreditService:
     # Award credits after Stripe subscription paid
     # -------------------------------------------
     def apply_subscription_credits(self, user_id: str, price_id: str):
+        # Skip auto-credit logic in test mode
+        if settings.TEST_MODE:
+            logger.info(f"[TEST MODE] Skipping subscription credit auto-application for user {user_id}")
+            return False
+            
         user = User.get(user_id)
         if not user:
             raise Exception("User not found")
@@ -94,6 +99,11 @@ class CreditService:
     # One-time trial use (3 credits = 1 video)
     # --------------
     def apply_trial(self, user_id: str):
+        # Skip auto-credit logic in test mode
+        if settings.TEST_MODE:
+            logger.info(f"[TEST MODE] Skipping trial credit auto-application for user {user_id}")
+            return False
+            
         user = User.get(user_id)
         if not user:
             raise Exception("User not found")

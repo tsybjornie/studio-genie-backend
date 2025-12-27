@@ -21,30 +21,101 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/register")
-def register(data: RegisterRequest):
+def register(data: RegisterRequest, session_id: str = None):
+    """
+    Register new user - Canonical v1.0
+    
+    If session_id provided (from Stripe redirect):
+    - Retrieve Stripe session
+    - Link customer_id to user
+    - Check for pending subscription
+    - Award initial credits if subscription exists
+    """
     try:
         from datetime import datetime
+        import stripe
+        from app.core.config import settings
+        from app.utils.credit_logger import log_credit_event, log_pending_subscription
+        
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        stripe_customer_id = None
+        
+        # If session_id provided, retrieve Stripe session
+        if session_id:
+            try:
+                session = stripe.checkout.Session.retrieve(session_id)
+                stripe_customer_id = session.get("customer")
+                logging.info(f"[REGISTER] Stripe session found | SessionID: {session_id} | CustomerID: {stripe_customer_id}")
+            except Exception as e:
+                logging.warning(f"[REGISTER] Failed to retrieve Stripe session | Error: {str(e)}")
 
         hashed_password = hash_password(data.password)
 
         conn = get_connection()
         cur = conn.cursor()
 
+        # Create user with Stripe customer ID if available
         cur.execute(
             """
-            INSERT INTO users (email, password_hash, credits, created_at)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO users (email, password_hash, credits, stripe_customer_id, created_at)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (data.email, hashed_password, 0, datetime.utcnow())
+            (data.email, hashed_password, 0, stripe_customer_id, datetime.utcnow())
         )
 
         user_id = cur.fetchone()["id"]
+        
+        # Check for pending subscription
+        if stripe_customer_id:
+            cur.execute(
+                """
+                SELECT id, credits_to_award, plan_name, stripe_subscription_id
+                FROM pending_subscriptions
+                WHERE stripe_customer_id = %s AND claimed_at IS NULL
+                """,
+                (stripe_customer_id,)
+            )
+            pending_sub = cur.fetchone()
+            
+            if pending_sub:
+                # Award pending credits
+                credits_to_award = pending_sub["credits_to_award"]
+                plan_name = pending_sub["plan_name"]
+                subscription_id = pending_sub["stripe_subscription_id"]
+                
+                cur.execute(
+                    "UPDATE users SET credits = %s WHERE id = %s",
+                    (credits_to_award, user_id)
+                )
+                
+                # Mark pending subscription as claimed
+                cur.execute(
+                    """
+                    UPDATE pending_subscriptions 
+                    SET claimed_at = NOW(), claimed_by_user_id = %s
+                    WHERE id = %s
+                    """,
+                    (user_id, pending_sub["id"])
+                )
+                
+                log_credit_event(
+                    "GRANT",
+                    user_id,
+                    credits_to_award,
+                    credits_to_award,
+                    "subscription",
+                    {"plan": plan_name, "subscription_id": subscription_id, "source": "pending_claim"}
+                )
+                log_pending_subscription("CLAIMED", stripe_customer_id, subscription_id, plan_name, credits_to_award, user_id)
+                
+                logging.info(f"[REGISTER] Pending subscription claimed | UserID: {user_id} | Credits: {credits_to_award}")
+        
         conn.commit()
         cur.close()
         conn.close()
 
-        token = create_access_token({"user_id": user_id})
+        token = create_access_token({"user_id": user_id, "email": data.email})
         return {"access_token": token, "token_type": "bearer"}
 
     except Exception as e:

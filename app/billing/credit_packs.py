@@ -4,7 +4,6 @@ Defines one-time credit purchase options with pricing.
 """
 
 from typing import Dict, Any
-from app.core.config import settings
 
 
 class CreditPack:
@@ -43,36 +42,28 @@ class CreditPack:
 # ---------------------------------------------------
 
 CREDIT_PACKS = {
-    "30": CreditPack(
-        key="30",
-        display_name="30 Credits Pack",
-        stripe_price_id=settings.STRIPE_CREDIT_PACK_30_PRICE_ID,
-        credits=30,
-        price_usd=9,
+    "small": CreditPack(
+        key="small",
+        display_name="Small Pack",
+        stripe_price_id="price_1SdZ5QBBwifSvpdIWW1Ntt22",  # Your Stripe price ID for small
+        credits=25,  # $25 / 3 credits per video ≈ 8 videos, but we'll give 25 credits
+        price_usd=25.00,
         popular=False
     ),
-    "100": CreditPack(
-        key="100",
-        display_name="100 Credits Pack",
-        stripe_price_id=settings.STRIPE_CREDIT_PACK_100_PRICE_ID,
-        credits=100,
-        price_usd=29,
+    "medium": CreditPack(
+        key="medium",
+        display_name="Medium Pack",
+        stripe_price_id="price_1SdZ7TBBwifSvpdIAZqbTuLR",  # Your Stripe price ID for medium
+        credits=75,  # $65 ≈ 21-25 videos worth of credits
+        price_usd=65.00,
         popular=True
     ),
-    "300": CreditPack(
-        key="300",
-        display_name="300 Credits Pack",
-        stripe_price_id=settings.STRIPE_CREDIT_PACK_300_PRICE_ID,
-        credits=300,
-        price_usd=79,
-        popular=False
-    ),
-    "1000": CreditPack(
-        key="1000",
-        display_name="1000 Credits Pack",
-        stripe_price_id=settings.STRIPE_CREDIT_PACK_1000_PRICE_ID,
-        credits=1000,
-        price_usd=249,
+    "power": CreditPack(
+        key="power",
+        display_name="Power Pack",
+        stripe_price_id="price_1SdZ7xBBwifSvpdI1B6BjybU",  # Your Stripe price ID for pro/power
+        credits=150,  # $119 ≈ 40-50 videos worth of credits
+        price_usd=119.00,
         popular=False
     ),
 }

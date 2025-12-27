@@ -163,8 +163,8 @@ async def create_credit_checkout(
             price_id=price_id,
             customer_email=user_email,
             user_id=user_id,
-            success_url=f"{settings.FRONTEND_URL}/dashboard/credits",
-            cancel_url=f"{settings.FRONTEND_URL}/dashboard/credits",
+            success_url=f"{settings.FRONTEND_URL}/dashboard",
+            cancel_url=f"{settings.FRONTEND_URL}/dashboard",
             mode="payment",
         )
         

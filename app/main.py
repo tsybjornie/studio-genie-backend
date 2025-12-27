@@ -37,6 +37,16 @@ async def startup_event():
     """Application startup"""
     logger.info("🚀 Starting Studio Génie API…")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
+    
+    # 🔍 DEBUG: Print all registered routes
+    logger.info("=" * 60)
+    logger.info("REGISTERED ROUTES:")
+    logger.info("=" * 60)
+    for route in app.routes:
+        if hasattr(route, 'path') and hasattr(route, 'methods'):
+            methods = ','.join(route.methods) if route.methods else 'N/A'
+            logger.info(f"{methods:10} {route.path}")
+    logger.info("=" * 60)
 
 # =========================================================
 # SHUTDOWN

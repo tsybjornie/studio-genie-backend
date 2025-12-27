@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     # ==============================
     ENVIRONMENT: str = "production"
     APP_URL: str = "http://localhost:3000"
-    FRONTEND_URL: str = "https://studio-genie-frontend-lua0ipmge-chamoreio.vercel.app"
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "https://studio-genie-frontend.vercel.app")
     
     # ==============================
     # TESTING

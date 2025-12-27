@@ -1,26 +1,333 @@
+"""
+Stripe Webhook Handler - Canonical v1.0
+Webhook-only credit grants with pending subscription support
+"""
+import logging
+import psycopg2
 from fastapi import APIRouter, Request, HTTPException
 import stripe
 from app.core.config import settings
-from app.services.stripe_service import stripe_service
+from app.utils.credit_logger import (
+    log_webhook_event,
+    log_credit_event,
+    log_pending_subscription
+)
 
-router = APIRouter(prefix="/webhooks/stripe")
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/webhook", tags=["Webhooks"])
 
-@router.post("")
+# Subscription price ID to monthly credits mapping
+SUBSCRIPTION_CREDITS = {
+    "price_1SV4tkBBwifSvpdICrbo1QFJ": {
+        "name": "Starter",
+        "monthly_credits": 12,
+    },
+    "price_1SV4uUBBwifSvpdIuoSpX0Q2": {
+        "name": "Creator",
+        "monthly_credits": 36,
+    },
+    "price_1SV4vLBBwifSvpdIYZlLeYJ6": {
+        "name": "Pro",
+        "monthly_credits": 90,
+    },
+}
+
+# Credit pack price ID to credits mapping
+CREDIT_PACK_AMOUNTS = {
+    "price_1SdZ5QBBwifSvpdIWW1Ntt22": 6,   # Small: 2 videos × 3 credits
+    "price_1SdZ7TBBwifSvpdIAZqbTuLR": 15,  # Medium: 5 videos × 3 credits
+    "price_1SdZ7xBBwifSvpdI1B6BjybU": 24,  # Power: 8 videos × 3 credits
+}
+
+
+def get_db_connection():
+    """Get database connection"""
+    return psycopg2.connect(settings.DATABASE_URL)
+
+
+@router.post("/stripe")
 async def stripe_webhook(request: Request):
+    """
+    Stripe webhook handler - CANONICAL v1.0
+    
+    Handles:
+    - invoice.paid: Monthly subscription renewals (carry-forward credits)
+    - checkout.session.completed: First payment or one-time credit packs
+    
+    Credit grants are WEBHOOK-ONLY. Frontend receives NO credits.
+    """
     payload = await request.body()
     sig = request.headers.get("stripe-signature")
-
+    
     try:
-        event = stripe.Webhook.construct_event(payload, sig, settings.STRIPE_WEBHOOK_SECRET)
-    except Exception:
-        raise HTTPException(400, "Invalid signature")
+        event = stripe.Webhook.construct_event(
+            payload, sig, settings.STRIPE_WEBHOOK_SECRET
+        )
+    except Exception as e:
+        logger.error(f"[WEBHOOK] Invalid signature | Error: {str(e)}")
+        raise HTTPException(400, "Invalid webhook signature")
+    
+    event_type = event["type"]
+    event_id = event["id"]
+    
+    logger.info(f"[WEBHOOK] Received event | Type: {event_type} | EventID: {event_id}")
+    
+    try:
+        if event_type == "invoice.paid":
+            await handle_invoice_paid(event)
+        elif event_type == "checkout.session.completed":
+            await handle_checkout_completed(event)
+        else:
+            logger.info(f"[WEBHOOK] Ignoring event type: {event_type}")
+        
+        return {"status": "ok"}
+        
+    except Exception as e:
+        logger.error(f"[WEBHOOK] Processing failed | EventType: {event_type} | Error: {str(e)}", exc_info=True)
+        # Return 200 to prevent Stripe retries for unrecoverable errors
+        return {"status": "error", "message": str(e)}
 
-    if event["type"] == "invoice.payment_succeeded":
-        data = event["data"]["object"]
-        stripe_sub_id = data["subscription"]
-        user_id = data["client_reference_id"]
-        plan = data["lines"]["data"][0]["price"]["nickname"]
 
-        stripe_service.process_invoice_paid(stripe_sub_id, user_id, plan)
+async def handle_invoice_paid(event):
+    """
+    Handle subscription renewal (invoice.paid)
+    
+    Credits are ADDED to existing balance (carry-forward, never reset)
+    If user doesn't exist yet, store in pending_subscriptions
+    """
+    invoice = event["data"]["object"]
+    customer_id = invoice.get("customer")
+    subscription_id = invoice.get("subscription")
+    
+    try:
+        # Get price ID from invoice line items
+        price_id = invoice["lines"]["data"][0]["price"]["id"]
+    except (KeyError, IndexError):
+        logger.error(f"[WEBHOOK] Missing price ID in invoice | CustomerID: {customer_id}")
+        log_webhook_event("invoice.paid", event["id"], None, customer_id, None, False, "Missing price ID")
+        return
+    
+    # Determine credits from price ID
+    if price_id not in SUBSCRIPTION_CREDITS:
+        logger.warning(f"[WEBHOOK] Unknown subscription price ID: {price_id}")
+        log_webhook_event("invoice.paid", event["id"], None, customer_id, None, False, "Unknown price ID")
+        return
+    
+    plan_info = SUBSCRIPTION_CREDITS[price_id]
+    credits_to_add = plan_info["monthly_credits"]
+    plan_name = plan_info["name"]
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Find user by Stripe customer ID
+        cursor.execute("SELECT id, credits FROM users WHERE stripe_customer_id = %s", (customer_id,))
+        user = cursor.fetchone()
+        
+        if user:
+            # User exists - ADD credits (carry-forward)
+            user_id, current_credits = user
+            new_balance = current_credits + credits_to_add
+            
+            cursor.execute(
+                "UPDATE users SET credits = %s WHERE id = %s",
+                (new_balance, user_id)
+            )
+            conn.commit()
+            
+            log_credit_event(
+                "GRANT",
+                user_id,
+                credits_to_add,
+                new_balance,
+                "subscription",
+                {"plan": plan_name, "price_id": price_id, "subscription_id": subscription_id}
+            )
+            log_webhook_event("invoice.paid", event["id"], "subscription", customer_id, user_id, True)
+            
+            logger.info(f"[WEBHOOK] Subscription credits added | UserID: {user_id} | +{credits_to_add} → {new_balance}")
+            
+        else:
+            # User doesn't exist yet - store as pending
+            cursor.execute(
+                """
+                INSERT INTO pending_subscriptions 
+                (stripe_customer_id, stripe_subscription_id, plan_name, price_id, credits_to_award)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (stripe_customer_id) 
+                DO UPDATE SET 
+                    stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+                    credits_to_award = pending_subscriptions.credits_to_award + EXCLUDED.credits_to_award
+                """,
+                (customer_id, subscription_id, plan_name, price_id, credits_to_add)
+            )
+            conn.commit()
+            
+            log_pending_subscription("CREATED", customer_id, subscription_id, plan_name, credits_to_add)
+            log_webhook_event("invoice.paid", event["id"], "subscription", customer_id, None, True)
+            
+            logger.info(f"[WEBHOOK] Pending subscription created | CustomerID: {customer_id} | Credits: {credits_to_add}")
+            
+    finally:
+        cursor.close()
+        conn.close()
 
-    return {"status": "ok"}
+
+async def handle_checkout_completed(event):
+    """
+    Handle checkout completion (checkout.session.completed)
+    
+    - Mode 'subscription': Store as pending (first payment before registration)
+    - Mode 'payment': Award credit pack immediately
+    """
+    session = event["data"]["object"]
+    mode = session.get("mode")
+    customer_id = session.get("customer")
+    session_id = session["id"]
+    
+    if mode == "subscription":
+        # First subscription payment - user hasn't registered yet
+        await handle_subscription_first_payment(session, event["id"])
+        
+    elif mode == "payment":
+        # One-time credit pack purchase
+        await handle_credit_pack_purchase(session, event["id"])
+        
+    else:
+        logger.warning(f"[WEBHOOK] Unknown checkout mode: {mode}")
+        log_webhook_event("checkout.session.completed", event["id"], mode, customer_id, None, False, "Unknown mode")
+
+
+async def handle_subscription_first_payment(session, event_id):
+    """Store first subscription payment as pending (user registers after payment)"""
+    customer_id = session.get("customer")
+    subscription_id = session.get("subscription")
+    
+    try:
+        # Get price ID from line items
+        line_items = session.get("line_items", {}).get("data", [])
+        if not line_items:
+            # Expand line_items if not present
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            expanded_session = stripe.checkout.Session.retrieve(
+                session["id"],
+                expand=["line_items"]
+            )
+            line_items = expanded_session.get("line_items", {}).get("data", [])
+        
+        price_id = line_items[0]["price"]["id"]
+    except (KeyError, IndexError) as e:
+        logger.error(f"[WEBHOOK] Missing price ID in subscription checkout | Error: {str(e)}")
+        log_webhook_event("checkout.session.completed", event_id, "subscription", customer_id, None, False, "Missing price ID")
+        return
+    
+    if price_id not in SUBSCRIPTION_CREDITS:
+        logger.warning(f"[WEBHOOK] Unknown subscription price ID: {price_id}")
+        return
+    
+    plan_info = SUBSCRIPTION_CREDITS[price_id]
+    credits_to_add = plan_info["monthly_credits"]
+    plan_name = plan_info["name"]
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute(
+            """
+            INSERT INTO pending_subscriptions 
+            (stripe_customer_id, stripe_subscription_id, plan_name, price_id, credits_to_award)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (stripe_customer_id) 
+            DO UPDATE SET 
+                stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+                plan_name = EXCLUDED.plan_name,
+                credits_to_award = EXCLUDED.credits_to_award
+            """,
+            (customer_id, subscription_id, plan_name, price_id, credits_to_award)
+        )
+        conn.commit()
+        
+        log_pending_subscription("CREATED", customer_id, subscription_id, plan_name, credits_to_add)
+        log_webhook_event("checkout.session.completed", event_id, "subscription", customer_id, None, True)
+        
+        logger.info(f"[WEBHOOK] Pending subscription stored | CustomerID: {customer_id} | SessionID: {session['id']}")
+        
+    finally:
+        cursor.close()
+        conn.close()
+
+
+async def handle_credit_pack_purchase(session, event_id):
+    """Award credit pack immediately (user is authenticated)"""
+    user_id = session.get("client_reference_id")
+    customer_id = session.get("customer")
+    
+    if not user_id:
+        logger.error(f"[WEBHOOK] Missing user_id in credit pack purchase | SessionID: {session['id']}")
+        log_webhook_event("checkout.session.completed", event_id, "payment", customer_id, None, False, "Missing user_id")
+        return
+    
+    try:
+        # Get price ID from line items
+        line_items = session.get("line_items", {}).get("data", [])
+        if not line_items:
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            expanded_session = stripe.checkout.Session.retrieve(
+                session["id"],
+                expand=["line_items"]
+            )
+            line_items = expanded_session.get("line_items", {}).get("data", [])
+        
+        price_id = line_items[0]["price"]["id"]
+    except (KeyError, IndexError) as e:
+        logger.error(f"[WEBHOOK] Missing price ID in credit pack | Error: {str(e)}")
+        log_webhook_event("checkout.session.completed", event_id, "payment", customer_id, user_id, False, "Missing price ID")
+        return
+    
+    if price_id not in CREDIT_PACK_AMOUNTS:
+        logger.warning(f"[WEBHOOK] Unknown credit pack price ID: {price_id}")
+        log_webhook_event("checkout.session.completed", event_id, "payment", customer_id, user_id, False, "Unknown price ID")
+        return
+    
+    credits_to_add = CREDIT_PACK_AMOUNTS[price_id]
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get current credits
+        cursor.execute("SELECT credits FROM users WHERE id = %s", (user_id,))
+        result = cursor.fetchone()
+        
+        if not result:
+            logger.error(f"[WEBHOOK] User not found | UserID: {user_id}")
+            log_webhook_event("checkout.session.completed", event_id, "payment", customer_id, user_id, False, "User not found")
+            return
+        
+        current_credits = result[0]
+        new_balance = current_credits + credits_to_add
+        
+        # ADD credits (carry-forward)
+        cursor.execute(
+            "UPDATE users SET credits = %s WHERE id = %s",
+            (new_balance, user_id)
+        )
+        conn.commit()
+        
+        log_credit_event(
+            "GRANT",
+            user_id,
+            credits_to_add,
+            new_balance,
+            "credit_pack",
+            {"price_id": price_id, "session_id": session["id"]}
+        )
+        log_webhook_event("checkout.session.completed", event_id, "payment", customer_id, user_id, True)
+        
+        logger.info(f"[WEBHOOK] Credit pack awarded | UserID: {user_id} | +{credits_to_add} → {new_balance}")
+        
+    finally:
+        cursor.close()
+        conn.close()

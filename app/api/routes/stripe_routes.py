@@ -2,9 +2,10 @@
 Stripe Checkout Routes - Canonical v1.0
 Two separate endpoints: subscription (landing) and credits (dashboard)
 POST-only, webhook-based credit grants
+HARDENED: Explicit GET rejection with clear error messages
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.services.stripe_service import stripe_service
 from app.core.security import get_current_user
@@ -37,17 +38,17 @@ SUBSCRIPTION_PRICES = {
 CREDIT_PACKS = {
     "small": {
         "price_id": "price_1SdZ5QBBwifSvpdIWW1Ntt22",
-        "credits": 25,
+        "credits": 6,  # 2 videos × 3 credits
         "name": "Small Pack",
     },
     "medium": {
         "price_id": "price_1SdZ7TBBwifSvpdIAZqbTuLR",
-        "credits": 75,
+        "credits": 15,  # 5 videos × 3 credits
         "name": "Medium Pack",
     },
     "power": {
         "price_id": "price_1SdZ7xBBwifSvpdI1B6BjybU",
-        "credits": 150,
+        "credits": 24,  # 8 videos × 3 credits
         "name": "Power Pack",
     },
 }
@@ -65,7 +66,7 @@ class CreditCheckoutRequest(BaseModel):
 
 
 # ========================================
-# ENDPOINT 1: SUBSCRIPTION CHECKOUT
+# ENDPOINT 1: SUBSCRIPTION CHECKOUT (POST)
 # ========================================
 @router.post("/checkout/subscription")
 async def create_subscription_checkout(
@@ -80,6 +81,8 @@ async def create_subscription_checkout(
     - Redirects to registration page with session_id
     - Credits awarded via webhook (invoice.paid)
     """
+    logger.info(f"[CHECKOUT] POST /checkout/subscription | PriceID: {body.priceId}")
+    
     price_id = body.priceId
     
     # Validate price ID
@@ -101,17 +104,28 @@ async def create_subscription_checkout(
             mode="subscription",
         )
         
-        logger.info(f"[CHECKOUT] Subscription session created | SessionID: {session.get('session_id')} | URL: {session.get('url')}")
+        logger.info(f"[CHECKOUT] ✅ 200 OK | Subscription session created | SessionID: {session.get('session_id')} | URL: {session.get('url')}")
         
         return {"url": session["url"]}
         
     except Exception as e:
-        logger.error(f"[CHECKOUT] Subscription session creation failed | Error: {str(e)}", exc_info=True)
+        logger.error(f"[CHECKOUT] ❌ 500 ERROR | Subscription session creation failed | Error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to create checkout session: {str(e)}")
 
 
+# HARDENING: Explicit GET rejection for subscription
+@router.get("/checkout/subscription")
+async def reject_get_subscription():
+    """Reject GET requests with clear error message"""
+    logger.warning("[CHECKOUT] ❌ 405 | GET /checkout/subscription rejected - POST required")
+    raise HTTPException(
+        status_code=405, 
+        detail="Method Not Allowed. This endpoint requires POST with JSON body: {\"priceId\": \"price_...\"}"
+    )
+
+
 # ========================================
-# ENDPOINT 2: CREDIT PACK CHECKOUT
+# ENDPOINT 2: CREDIT PACK CHECKOUT (POST)
 # ========================================
 @router.post("/checkout/credits")
 async def create_credit_checkout(
@@ -121,12 +135,15 @@ async def create_credit_checkout(
     """
     Credit pack checkout for authenticated dashboard users.
     
-    - Authentication required
+    - Authentication required (JWT in Authorization header)
     - User must be logged in
     - Stripe mode: 'payment' (one-time)
     - Redirects back to dashboard
     - Credits awarded via webhook (checkout.session.completed)
     """
+    user_id = current_user.get("user_id")
+    logger.info(f"[CHECKOUT] POST /checkout/credits | UserID: {user_id} | PackKey: {body.packKey}")
+    
     pack_key = body.packKey
     
     # Validate pack key
@@ -137,7 +154,6 @@ async def create_credit_checkout(
     pack_info = CREDIT_PACKS[pack_key]
     price_id = pack_info["price_id"]
     
-    user_id = current_user.get("user_id")
     user_email = current_user.get("email", "unknown@example.com")
     
     try:
@@ -152,10 +168,21 @@ async def create_credit_checkout(
             mode="payment",
         )
         
-        logger.info(f"[CHECKOUT] Credit pack session created | UserID: {user_id} | SessionID: {session.get('session_id')}")
+        logger.info(f"[CHECKOUT] ✅ 200 OK | Credit pack session created | UserID: {user_id} | SessionID: {session.get('session_id')}")
         
         return {"url": session["url"]}
         
     except Exception as e:
-        logger.error(f"[CHECKOUT] Credit pack session creation failed | UserID: {user_id} | Error: {str(e)}", exc_info=True)
+        logger.error(f"[CHECKOUT] ❌ 500 ERROR | Credit pack session creation failed | UserID: {user_id} | Error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to create checkout session: {str(e)}")
+
+
+# HARDENING: Explicit GET rejection for credits
+@router.get("/checkout/credits")
+async def reject_get_credits():
+    """Reject GET requests with clear error message"""
+    logger.warning("[CHECKOUT] ❌ 405 | GET /checkout/credits rejected - POST + JWT required")
+    raise HTTPException(
+        status_code=405, 
+        detail="Method Not Allowed. This endpoint requires POST with Authorization header and JSON body: {\"packKey\": \"small|medium|power\"}"
+    )

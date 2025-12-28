@@ -159,12 +159,22 @@ async def create_credit_checkout(
     try:
         logger.info(f"[CHECKOUT] Creating credit pack session | UserID: {user_id} | Pack: {pack_info['name']} | Credits: {pack_info['credits']}")
         
+        # Construct URLs
+        success_url = f"{settings.FRONTEND_URL}/dashboard?checkout=success"
+        cancel_url = f"{settings.FRONTEND_URL}/dashboard?checkout=cancel"
+        
+        # 🔍 VERIFY: Log exact URLs that will be used
+        logger.info(f"[CHECKOUT] 🔍 REDIRECT URLs:")
+        logger.info(f"[CHECKOUT]   SUCCESS: {success_url}")
+        logger.info(f"[CHECKOUT]   CANCEL:  {cancel_url}")
+        logger.info(f"[CHECKOUT]   FRONTEND_URL: {settings.FRONTEND_URL}")
+        
         session = stripe_service.create_checkout_session(
             price_id=price_id,
             customer_email=user_email,
             user_id=user_id,
-            success_url=f"{settings.FRONTEND_URL}/dashboard?checkout=success",
-            cancel_url=f"{settings.FRONTEND_URL}/dashboard?checkout=cancel",
+            success_url=success_url,
+            cancel_url=cancel_url,
             mode="payment",
         )
         

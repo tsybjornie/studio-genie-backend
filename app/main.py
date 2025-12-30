@@ -22,7 +22,14 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://studio-genie-frontend.vercel.app",
+        "https://studio-genie-frontend-cx27plzvs-chamoreio.vercel.app",
+        "https://studio-genie-frontend-bztzhulle-chamoreio.vercel.app",
+        "https://studio-genie-frontend-4rxnzkek6-chamoreio.vercel.app",
+        "http://localhost:5173",
+        "http://localhost:3000"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

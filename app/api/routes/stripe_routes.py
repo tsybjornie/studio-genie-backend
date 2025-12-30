@@ -10,45 +10,30 @@ from pydantic import BaseModel
 from app.services.stripe_service import stripe_service
 from app.core.security import get_current_user
 from app.core.config import settings
+from app.core.subscription_prices import SUBSCRIPTION_PRICES
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/stripe", tags=["Stripe Checkout"])
 
-# ========================================
-# SUBSCRIPTION PRICES (Monthly Recurring)
-# ========================================
-SUBSCRIPTION_PRICES = {
-    "price_1SV4tkBBwifSvpdICrbo1QFJ": {
-        "name": "Starter",
-        "monthly_credits": 12,  # 4 videos × 3 credits
-    },
-    "price_1SV4uUBBwifSvpdIuoSpX0Q2": {
-        "name": "Creator",
-        "monthly_credits": 36,  # 12 videos × 3 credits
-    },
-    "price_1SV4vLBBwifSvpdIYZlLeYJ6": {
-        "name": "Pro",
-        "monthly_credits": 90,  # 30 videos × 3 credits
-    },
-}
+
 
 # ========================================
 # CREDIT PACKS (One-time Purchase)
 # ========================================
 CREDIT_PACKS = {
     "small": {
-        "price_id": "price_1SdZ5QBBwifSvpdIWW1Ntt22",
-        "credits": 6,  # 2 videos × 3 credits
+        "price_id": "price_1SdZ50BBwifSvpdIWW1Ntt22",
+        "credits": 9,  # Small - $25
         "name": "Small Pack",
     },
     "medium": {
         "price_id": "price_1SdZ7TBBwifSvpdIAZqbTuLR",
-        "credits": 15,  # 5 videos × 3 credits
+        "credits": 30,  # Medium - $65
         "name": "Medium Pack",
     },
     "power": {
         "price_id": "price_1SdZ7xBBwifSvpdI1B6BjybU",
-        "credits": 24,  # 8 videos × 3 credits
+        "credits": 90,  # Power - $119
         "name": "Power Pack",
     },
 }
@@ -92,14 +77,29 @@ async def create_subscription_checkout(
     
     plan_info = SUBSCRIPTION_PRICES[price_id]
     
+    # ========================================
+    # 🔍 DEBUG: Log plan selection BEFORE Stripe call
+    # ========================================
+    logger.info("=" * 80)
+    logger.info("[CHECKOUT] 📋 SUBSCRIPTION CHECKOUT REQUEST")
+    logger.info(f"[CHECKOUT] Selected Plan: {plan_info['name']}")
+    logger.info(f"[CHECKOUT] Price ID: {price_id}")
+    logger.info(f"[CHECKOUT] Monthly Credits: {plan_info['monthly_credits']}")
+    logger.info(f"[CHECKOUT] Valid subscription prices: {list(SUBSCRIPTION_PRICES.keys())}")
+    logger.info(f"[CHECKOUT] Mode: subscription")
+    logger.info(f"[CHECKOUT] Frontend URL: {settings.FRONTEND_URL}")
+    logger.info(f"[CHECKOUT] Success URL: {settings.FRONTEND_URL}/dashboard?checkout=success")
+    logger.info(f"[CHECKOUT] Cancel URL: {settings.FRONTEND_URL}/pricing")
+    logger.info("=" * 80)
+    
     try:
-        logger.info(f"[CHECKOUT] Creating subscription session | Plan: {plan_info['name']} | PriceID: {price_id}")
+        logger.info(f"[CHECKOUT] 🚀 Calling StripeService.create_checkout_session()")
         
         session = stripe_service.create_checkout_session(
             price_id=price_id,
             customer_email=None,  # User hasn't registered yet
             user_id=None,  # Will be linked after registration
-            success_url=f"{settings.FRONTEND_URL}/register?session_id={{CHECKOUT_SESSION_ID}}",
+            success_url=f"{settings.FRONTEND_URL}/dashboard?checkout=success",
             cancel_url=f"{settings.FRONTEND_URL}/pricing",
             mode="subscription",
         )

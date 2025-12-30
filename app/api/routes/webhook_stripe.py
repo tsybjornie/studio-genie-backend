@@ -7,6 +7,7 @@ import psycopg2
 from fastapi import APIRouter, Request, HTTPException
 import stripe
 from app.core.config import settings
+from app.core.subscription_prices import SUBSCRIPTION_PRICES
 from app.utils.credit_logger import (
     log_webhook_event,
     log_credit_event,
@@ -16,27 +17,12 @@ from app.utils.credit_logger import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook", tags=["Webhooks"])
 
-# Subscription price ID to monthly credits mapping
-SUBSCRIPTION_CREDITS = {
-    "price_1SV4tkBBwifSvpdICrbo1QFJ": {
-        "name": "Starter",
-        "monthly_credits": 12,
-    },
-    "price_1SV4uUBBwifSvpdIuoSpX0Q2": {
-        "name": "Creator",
-        "monthly_credits": 36,
-    },
-    "price_1SV4vLBBwifSvpdIYZlLeYJ6": {
-        "name": "Pro",
-        "monthly_credits": 90,
-    },
-}
 
 # Credit pack price ID to credits mapping
 CREDIT_PACK_AMOUNTS = {
-    "price_1SdZ5QBBwifSvpdIWW1Ntt22": 6,   # Small: 2 videos × 3 credits
-    "price_1SdZ7TBBwifSvpdIAZqbTuLR": 15,  # Medium: 5 videos × 3 credits
-    "price_1SdZ7xBBwifSvpdI1B6BjybU": 24,  # Power: 8 videos × 3 credits
+    "price_1SdZ50BBwifSvpdIWW1Ntt22": 9,    # Small - $25
+    "price_1SdZ7TBBwifSvpdIAZqbTuLR": 30,   # Medium - $65
+    "price_1SdZ7xBBwifSvpdI1B6BjybU": 90,   # Power - $119
 }
 
 

@@ -3,19 +3,14 @@ from pydantic import BaseModel
 from app.services.stripe_service import stripe_service
 from app.core.security import get_current_user
 from app.core.config import settings
+from app.core.subscription_prices import SUBSCRIPTION_PRICES
 
 router = APIRouter(prefix="/billing", tags=["Billing"])
 
-# Subscription price IDs (for monthly plans on landing page)
-SUBSCRIPTION_PRICES = {
-    "starter": "price_1SV4tkBBwifSvpdICrbo1QFJ",
-    "creator": "price_1SV4uUBBwifSvpdIuoSpX0Q2",
-    "pro": "price_1SV4vLBBwifSvpdIYZlLeYJ6",
-}
 
 # Credit pack price IDs (for one-time purchases in dashboard)
 CREDIT_PACK_PRICES = {
-    "small": "price_1SdZ5QBBwifSvpdIWW1Ntt22",
+    "small": "price_1SdZ50BBwifSvpdIWW1Ntt22",
     "medium": "price_1SdZ7TBBwifSvpdIAZqbTuLR",
     "power": "price_1SdZ7xBBwifSvpdI1B6BjybU",
 }
@@ -38,7 +33,7 @@ def create_subscription_checkout(request: SubscriptionCheckoutRequest):
     """
     price_id = request.price_id
     
-    if price_id not in SUBSCRIPTION_PRICES.values():
+    if price_id not in SUBSCRIPTION_PRICES:
         raise HTTPException(status_code=400, detail=f"Invalid subscription price ID: {price_id}")
 
     try:

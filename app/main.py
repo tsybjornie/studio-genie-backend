@@ -38,6 +38,21 @@ async def startup_event():
     logger.info("🚀 Starting Studio Génie API…")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
     
+    # =========================================================
+    # STRIPE CONFIGURATION VALIDATION
+    # =========================================================
+    try:
+        from app.services.stripe_validator import validate_stripe_configuration
+        logger.info("Running Stripe configuration validation...")
+        validate_stripe_configuration()
+    except RuntimeError as e:
+        logger.error(f"❌ STARTUP FAILED: {str(e)}")
+        logger.error("Application cannot start with invalid Stripe configuration")
+        raise
+    except Exception as e:
+        logger.error(f"❌ Unexpected error during Stripe validation: {str(e)}")
+        raise
+    
     # 🔍 DEBUG: Print all registered routes
     logger.info("=" * 60)
     logger.info("REGISTERED ROUTES:")

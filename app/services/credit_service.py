@@ -2,18 +2,20 @@ from app.core.config import settings
 from fastapi import HTTPException
 from app.models.user import User
 from app.models.subscription import Subscription
+from app.core.subscription_prices import SUBSCRIPTION_PRICES
 import logging
 
 logger = logging.getLogger(__name__)
 
 # ============================================
-#   SUBSCRIPTION CREDIT AMOUNTS (US MARKET)
+#   SUBSCRIPTION CREDIT AMOUNTS
+#   Derived from canonical subscription prices
 # ============================================
 
+# Build credit map from canonical subscription prices
 SUBSCRIPTION_CREDIT_MAP = {
-    settings.STRIPE_STARTER_PRICE_ID: 60,     # Starter $39 → 60 credits
-    settings.STRIPE_CREATOR_PRICE_ID: 150,    # Creator $79 → 150 credits
-    settings.STRIPE_PRO_PRICE_ID: 360,        # Pro $149 → 360 credits
+    price_id: info["monthly_credits"]
+    for price_id, info in SUBSCRIPTION_PRICES.items()
 }
 
 # ============================================
@@ -22,7 +24,7 @@ SUBSCRIPTION_CREDIT_MAP = {
 # ============================================
 
 PRICE_ID_TO_CREDITS = {
-    "price_1SdZ5QBBwifSvpdIWW1Ntt22": 9,    # Small - $25
+    "price_1SdZ50BBwifSvpdIWW1Ntt22": 9,    # Small - $25
     "price_1SdZ7TBBwifSvpdIAZqbTuLR": 30,   # Medium - $65
     "price_1SdZ7xBBwifSvpdI1B6BjybU": 90,   # Power - $119
 }

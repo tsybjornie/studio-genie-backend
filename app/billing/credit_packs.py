@@ -45,7 +45,7 @@ CREDIT_PACKS = {
     "small": CreditPack(
         key="small",
         display_name="Small Pack",
-        stripe_price_id="price_1SdZ5QBBwifSvpdIWW1Ntt22",  # Your Stripe price ID for small
+        stripe_price_id="price_1SdZ50BBwifSvpdIWW1Ntt22",  # Your Stripe price ID for small
         credits=25,  # $25 / 3 credits per video ≈ 8 videos, but we'll give 25 credits
         price_usd=25.00,
         popular=False

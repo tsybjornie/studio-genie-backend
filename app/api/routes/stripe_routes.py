@@ -82,7 +82,7 @@ async def create_subscription_checkout(
     # ========================================
     logger.info("=" * 80)
     logger.info("[CHECKOUT] 📋 SUBSCRIPTION CHECKOUT REQUEST")
-    logger.info(f"[CHECKOUT] Selected Plan: {plan_info['name']}")
+    logger.info(f"[CHECKOUT] Selected Plan: {plan_info['display_name']}")
     logger.info(f"[CHECKOUT] Price ID: {price_id}")
     logger.info(f"[CHECKOUT] Monthly Credits: {plan_info['monthly_credits']}")
     logger.info(f"[CHECKOUT] Valid subscription prices: {list(SUBSCRIPTION_PRICES.keys())}")

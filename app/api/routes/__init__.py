@@ -30,7 +30,7 @@ def init_routes(app: FastAPI):
     # Billing (Legacy - consider deprecating)
     app.include_router(billing_router, prefix="/billing", tags=["Billing"])
     # Webhooks
-    app.include_router(webhook_stripe_router)  # Canonical v1.0 - router has its own prefix
+    app.include_router(webhook_stripe_router, tags=["Stripe Webhooks"])  # Canonical v1.0 - router has its own prefix
     app.include_router(billing_webhook_router)  # Legacy
     # Subscription Change
     app.include_router(subscription_change_router)

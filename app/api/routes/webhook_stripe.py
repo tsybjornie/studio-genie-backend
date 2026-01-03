@@ -206,14 +206,14 @@ async def handle_subscription_first_payment(session, event_id):
     except (KeyError, IndexError) as e:
         logger.error(f"[WEBHOOK] Missing price ID in subscription checkout | Error: {str(e)}")
         log_webhook_event("checkout.session.completed", event_id, "subscription", customer_id, None, False, "Missing price ID")
+       # Validate price ID
+    if price_id not in SUBSCRIPTION_PRICES:
+        logger.warning(f"[WEBHOOK] Unknown subscription price ID: {price_id} | Skipping")
         return
     
-    if price_id not in SUBSCRIPTION_CREDITS:
-        logger.warning(f"[WEBHOOK] Unknown subscription price ID: {price_id}")
-        return
-    
-    plan_info = SUBSCRIPTION_CREDITS[price_id]
-    credits_to_add = plan_info["monthly_credits"]
+    plan_info = SUBSCRIPTION_PRICES[price_id]
+    plan_name = plan_info["plan_name"]
+    credits_to_award = plan_info["monthly_credits"]
     plan_name = plan_info["name"]
     
     conn = get_db_connection()

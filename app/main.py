@@ -17,22 +17,22 @@ app = FastAPI(
 )
 
 # =========================================================
-# CORS
+# CORS - MUST BE BEFORE ROUTERS
 # =========================================================
 
 app.add_middleware(
     CORSMiddleware,
+    allow_origin_regex=r"https://studio-genie-frontend-.*\.vercel\.app",  # All preview URLs
     allow_origins=[
-        "https://studio-genie-frontend.vercel.app",
-        "https://studio-genie-frontend-cx27plzvs-chamoreio.vercel.app",
-        "https://studio-genie-frontend-bztzhulle-chamoreio.vercel.app",
-        "https://studio-genie-frontend-4rxnzkek6-chamoreio.vercel.app",
+        "https://studio-genie-frontend.vercel.app",  # Production
+        "https://studio-genie-frontend-lasut5r6t-chamoreio.vercel.app",  # Latest preview
         "http://localhost:5173",
         "http://localhost:3000"
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],  # Explicit methods
+    allow_headers=["Content-Type", "Authorization", "Accept"],  # Explicit headers
+    max_age=3600,  # Cache preflight for 1 hour
 )
 
 # =========================================================

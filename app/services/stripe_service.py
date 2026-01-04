@@ -60,7 +60,8 @@ class StripeService:
             payload = {
                 "mode": mode,
                 "customer_email": customer_email,
-                "client_reference_id": user_id,
+                "client_reference_id": str(user_id) if user_id else None,
+                "metadata": {"user_id": str(user_id)} if user_id else {},  # ← For webhook lookup
                 "line_items": [{"price": price_id, "quantity": 1}],
                 "success_url": success_url,
                 "cancel_url": cancel_url,
@@ -72,6 +73,7 @@ class StripeService:
             logger.info(f"[STRIPE CHECKOUT]   line_items: {json.dumps(payload['line_items'])}")
             logger.info(f"[STRIPE CHECKOUT]   customer_email: {payload['customer_email']}")
             logger.info(f"[STRIPE CHECKOUT]   client_reference_id: {payload['client_reference_id']}")
+            logger.info(f"[STRIPE CHECKOUT]   metadata: {payload['metadata']}")
             logger.info(f"[STRIPE CHECKOUT]   success_url: {payload['success_url']}")
             logger.info(f"[STRIPE CHECKOUT]   cancel_url: {payload['cancel_url']}")
             

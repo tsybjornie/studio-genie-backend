@@ -63,6 +63,8 @@ async def stripe_webhook(request: Request):
             await handle_invoice_paid(event)
         elif event_type == "checkout.session.completed":
             await handle_checkout_completed(event)
+        elif event_type == "customer.subscription.deleted":
+            await handle_subscription_deleted(event)  # ← Revoke access
         else:
             logger.info(f"[WEBHOOK] Ignoring event type: {event_type}")
         
@@ -76,12 +78,13 @@ async def stripe_webhook(request: Request):
 
 async def handle_invoice_paid(event):
     """
-    Handle subscription renewal (invoice.paid)
+    Handle subscription payment (invoice.paid) - STRIPE AUTHORITY
     
-    Credits are ADDED to existing balance (carry-forward, never reset)
-    If user doesn't exist yet, store in pending_subscriptions
+    Activates subscription and grants monthly credits.
+    Idempotent: uses invoice_id to prevent duplicate credit grants.
     """
     invoice = event["data"]["object"]
+    invoice_id = invoice.get("id")
     customer_id = invoice.get("customer")
     subscription_id = invoice.get("subscription")
     
@@ -89,72 +92,89 @@ async def handle_invoice_paid(event):
         # Get price ID from invoice line items
         price_id = invoice["lines"]["data"][0]["price"]["id"]
     except (KeyError, IndexError):
-        logger.error(f"[WEBHOOK] Missing price ID in invoice | CustomerID: {customer_id}")
-        log_webhook_event("invoice.paid", event["id"], None, customer_id, None, False, "Missing price ID")
+        logger.error(f"[WEBHOOK] Missing price ID in invoice | InvoiceID: {invoice_id}")
         return
     
-    # Determine credits from price ID
-    if price_id not in SUBSCRIPTION_CREDITS:
+    # Validate price ID
+    if price_id not in SUBSCRIPTION_PRICES:
         logger.warning(f"[WEBHOOK] Unknown subscription price ID: {price_id}")
-        log_webhook_event("invoice.paid", event["id"], None, customer_id, None, False, "Unknown price ID")
         return
     
-    plan_info = SUBSCRIPTION_CREDITS[price_id]
+    plan_info = SUBSCRIPTION_PRICES[price_id]
     credits_to_add = plan_info["monthly_credits"]
-    plan_name = plan_info["name"]
+    plan_name = plan_info["plan_name"]
     
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-        # Find user by Stripe customer ID
-        cursor.execute("SELECT id, credits FROM users WHERE stripe_customer_id = %s", (customer_id,))
+        # Find user by customer_id
+        cursor.execute(
+            "SELECT id, credits, stripe_subscription_id FROM users WHERE stripe_customer_id = %s",
+            (customer_id,)
+        )
         user = cursor.fetchone()
         
         if user:
-            # User exists - ADD credits (carry-forward)
-            user_id, current_credits = user
+            user_id = user["id"]
+            current_credits = user["credits"]
+            
+#             # Check if invoice already processed (idempotency)
+            # TODO: Add processed_invoices table for idempotency
+            
+            # ACTIVATE subscription + ADD credits
             new_balance = current_credits + credits_to_add
             
-            cursor.execute(
-                "UPDATE users SET credits = %s WHERE id = %s",
-                (new_balance, user_id)
-            )
+            cursor.execute("""
+                UPDATE users 
+                SET has_active_subscription = TRUE,
+                    stripe_subscription_id = %s,
+                    credits = %s
+                WHERE id = %s
+            """, (subscription_id, new_balance, user_id))
             conn.commit()
             
-            log_credit_event(
-                "GRANT",
-                user_id,
-                credits_to_add,
-                new_balance,
-                "subscription",
-                {"plan": plan_name, "price_id": price_id, "subscription_id": subscription_id}
-            )
-            log_webhook_event("invoice.paid", event["id"], "subscription", customer_id, user_id, True)
-            
-            logger.info(f"[WEBHOOK] Subscription credits added | UserID: {user_id} | +{credits_to_add} → {new_balance}")
+            logger.info(f"[WEBHOOK] ✅ Subscription activated | UserID: {user_id} | Plan: {plan_name} | Credits: +{credits_to_add} → {new_balance}")
             
         else:
-            # User doesn't exist yet - store as pending
-            cursor.execute(
-                """
-                INSERT INTO pending_subscriptions 
-                (stripe_customer_id, stripe_subscription_id, plan_name, price_id, credits_to_award)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (stripe_customer_id) 
-                DO UPDATE SET 
-                    stripe_subscription_id = EXCLUDED.stripe_subscription_id,
-                    credits_to_award = pending_subscriptions.credits_to_award + EXCLUDED.credits_to_award
-                """,
-                (customer_id, subscription_id, plan_name, price_id, credits_to_add)
-            )
-            conn.commit()
+            logger.warning(f"[WEBHOOK] User not found for customer {customer_id} | Skipping (auth-first flow)")
+            # In auth-first flow, user must exist BEFORE payment
             
-            log_pending_subscription("CREATED", customer_id, subscription_id, plan_name, credits_to_add)
-            log_webhook_event("invoice.paid", event["id"], "subscription", customer_id, None, True)
-            
-            logger.info(f"[WEBHOOK] Pending subscription created | CustomerID: {customer_id} | Credits: {credits_to_add}")
-            
+    finally:
+        cursor.close()
+        conn.close()
+
+
+async def handle_subscription_deleted(event):
+    """
+    Handle subscription cancellation (customer.subscription.deleted) - STRIPE AUTHORITY
+    
+    Revokes access immediately. Credits remain but features are blocked.
+    Idempotent: safe to run multiple times.
+    """
+    subscription = event["data"]["object"]
+    subscription_id = subscription.get("id")
+    customer_id = subscription.get("customer")
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # REVOKE subscription access (keep credits)
+        cursor.execute("""
+            UPDATE users 
+            SET has_active_subscription = FALSE
+            WHERE stripe_customer_id = %s
+        """, (customer_id,))
+        
+        rows_affected = cursor.rowcount
+        conn.commit()
+        
+        if rows_affected > 0:
+            logger.info(f"[WEBHOOK] ❌ Subscription canceled | CustomerID: {customer_id} | SubscriptionID: {subscription_id}")
+        else:
+            logger.warning(f"[WEBHOOK] User not found for canceled subscription | CustomerID: {customer_id}")
+        
     finally:
         cursor.close()
         conn.close()

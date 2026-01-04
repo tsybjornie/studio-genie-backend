@@ -1,14 +1,13 @@
 """
 Stripe Checkout Routes - Canonical v1.0
-Two separate endpoints: subscription (landing) and credits (dashboard)
-POST-only, webhook-based credit grants
-HARDENED: Explicit GET rejection with clear error messages
+Subscription-gated checkout with authentication
 """
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.services.stripe_service import stripe_service
 from app.core.security import get_current_user
+from app.core.subscription import require_active_subscription
 from app.core.config import settings
 from app.core.subscription_prices import SUBSCRIPTION_PRICES
 
@@ -55,18 +54,22 @@ class CreditCheckoutRequest(BaseModel):
 # ========================================
 @router.post("/checkout/subscription")
 async def create_subscription_checkout(
-    body: SubscriptionCheckoutRequest
+    body: SubscriptionCheckoutRequest,
+    current_user=Depends(get_current_user)  # ← Require authentication
 ):
     """
-    Subscription checkout for landing page pricing.
+    Subscription checkout - Auth required.
     
-    - No authentication required
-    - User pays BEFORE registration
+    Flow: User must register/login BEFORE subscribing
+    - Authentication required
+    - User linked immediately in Stripe session
     - Stripe mode: 'subscription'
-    - Redirects to registration page with session_id
     - Credits awarded via webhook (invoice.paid)
     """
-    logger.info(f"[CHECKOUT] POST /checkout/subscription | PriceID: {body.priceId}")
+    user_id = current_user["user_id"]
+    user_email = current_user["email"]
+    
+    logger.info(f"[CHECKOUT] POST /checkout/subscription | UserID: {user_id} | PriceID: {body.priceId}")
     
     price_id = body.priceId
     
@@ -82,14 +85,12 @@ async def create_subscription_checkout(
     # ========================================
     logger.info("=" * 80)
     logger.info("[CHECKOUT] 📋 SUBSCRIPTION CHECKOUT REQUEST")
+    logger.info(f"[CHECKOUT] User ID: {user_id}")
+    logger.info(f"[CHECKOUT] User Email: {user_email}")
     logger.info(f"[CHECKOUT] Selected Plan: {plan_info['display_name']}")
     logger.info(f"[CHECKOUT] Price ID: {price_id}")
     logger.info(f"[CHECKOUT] Monthly Credits: {plan_info['monthly_credits']}")
-    logger.info(f"[CHECKOUT] Valid subscription prices: {list(SUBSCRIPTION_PRICES.keys())}")
     logger.info(f"[CHECKOUT] Mode: subscription")
-    logger.info(f"[CHECKOUT] Frontend URL: {settings.FRONTEND_URL}")
-    logger.info(f"[CHECKOUT] Success URL: {settings.FRONTEND_URL}/dashboard?checkout=success")
-    logger.info(f"[CHECKOUT] Cancel URL: {settings.FRONTEND_URL}/pricing")
     logger.info("=" * 80)
     
     try:
@@ -97,14 +98,13 @@ async def create_subscription_checkout(
         
         session = stripe_service.create_checkout_session(
             price_id=price_id,
-            customer_email=None,  # User hasn't registered yet
-            user_id=None,  # Will be linked after registration
+            customer_email=user_email,  user_id=user_id,  # ← Link user immediately
             success_url=f"{settings.FRONTEND_URL}/dashboard?checkout=success",
             cancel_url=f"{settings.FRONTEND_URL}/pricing",
             mode="subscription",
         )
         
-        logger.info(f"[CHECKOUT] ✅ 200 OK | Subscription session created | SessionID: {session.get('session_id')} | URL: {session.get('url')}")
+        logger.info(f"[CHECKOUT] ✅ 200 OK | Subscription session created | UserID: {user_id} | SessionID: {session.get('session_id')}")
         
         return {"url": session["url"]}
         
@@ -130,18 +130,17 @@ async def reject_get_subscription():
 @router.post("/checkout/credits")
 async def create_credit_checkout(
     body: CreditCheckoutRequest,
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_active_subscription),  # ← Subscription required
 ):
     """
-    Credit pack checkout for authenticated dashboard users.
+    Credit pack checkout - Active subscription required.
     
-    - Authentication required (JWT in Authorization header)
-    - User must be logged in
+    - Authentication AND subscription required
+    - User must have active subscription to buy credit packs
     - Stripe mode: 'payment' (one-time)
-    - Redirects back to dashboard
-    - Credits awarded via webhook (checkout.session.completed)
+    - Credits awarded via webhook
     """
-    user_id = current_user.get("user_id")
+    user_id = current_user["user_id"]
     logger.info(f"[CHECKOUT] POST /checkout/credits | UserID: {user_id} | PackKey: {body.packKey}")
     
     pack_key = body.packKey

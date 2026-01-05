@@ -37,8 +37,9 @@ def require_active_subscription(current_user: dict = Depends(get_current_user)):
     cur = conn.cursor()
     
     try:
+        # Check subscription_status column (not has_active_subscription)
         cur.execute(
-            "SELECT has_active_subscription FROM users WHERE id = %s",
+            "SELECT subscription_status FROM users WHERE id = %s",
             (user_id,)
         )
         user = cur.fetchone()
@@ -47,8 +48,11 @@ def require_active_subscription(current_user: dict = Depends(get_current_user)):
             logger.error(f"[SUBSCRIPTION GATE] User {user_id} not found in database")
             raise HTTPException(status_code=404, detail="User not found")
         
-        if not user["has_active_subscription"]:
-            logger.warning(f"[SUBSCRIPTION GATE] Access denied for user {user_id} - no active subscription")
+        subscription_status = user.get("subscription_status")
+        
+        # Check if subscription_status is "active"
+        if subscription_status != "active":
+            logger.warning(f"[SUBSCRIPTION GATE] Access denied for user {user_id} - subscription_status: {subscription_status}")
             raise HTTPException(
                 status_code=403,
                 detail="Active subscription required. Subscribe at /pricing"

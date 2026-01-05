@@ -149,7 +149,7 @@ def login(data: LoginRequest):
         cur.close()
         conn.close()
 
-        token = create_access_token({"user_id": user["id"]})
+        token = create_access_token({"user_id": user["id"], "email": user["email"]})
         return {"access_token": token, "token_type": "bearer"}
 
     except HTTPException:

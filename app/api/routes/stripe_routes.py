@@ -67,7 +67,7 @@ async def create_subscription_checkout(
     - Credits awarded via webhook (invoice.paid)
     """
     user_id = current_user["user_id"]
-    user_email = current_user["email"]
+    user_email = current_user.get("email", "unknown@example.com")  # Safe access with default
     
     logger.info(f"[CHECKOUT] POST /checkout/subscription | UserID: {user_id} | PriceID: {body.priceId}")
     

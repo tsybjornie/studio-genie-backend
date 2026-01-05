@@ -127,11 +127,12 @@ async def handle_invoice_paid(event):
             
             cursor.execute("""
                 UPDATE users 
-                SET has_active_subscription = TRUE,
+                SET subscription_status = 'active',
+                    subscription_plan = %s,
                     stripe_subscription_id = %s,
                     credits = %s
                 WHERE id = %s
-            """, (subscription_id, new_balance, user_id))
+            """, (plan_name, subscription_id, new_balance, user_id))
             conn.commit()
             
             logger.info(f"[WEBHOOK] ✅ Subscription activated | UserID: {user_id} | Plan: {plan_name} | Credits: +{credits_to_add} → {new_balance}")
@@ -163,7 +164,7 @@ async def handle_subscription_deleted(event):
         # REVOKE subscription access (keep credits)
         cursor.execute("""
             UPDATE users 
-            SET has_active_subscription = FALSE
+            SET subscription_status = 'inactive'
             WHERE stripe_customer_id = %s
         """, (customer_id,))
         
@@ -256,7 +257,7 @@ async def handle_subscription_first_payment(session, event_id):
         )
         conn.commit()
         
-        log_pending_subscription("CREATED", customer_id, subscription_id, plan_name, credits_to_add)
+        log_pending_subscription("CREATED", customer_id, subscription_id, plan_name, credits_to_award)
         log_webhook_event("checkout.session.completed", event_id, "subscription", customer_id, None, True)
         
         logger.info(f"[WEBHOOK] Pending subscription stored | CustomerID: {customer_id} | SessionID: {session['id']}")

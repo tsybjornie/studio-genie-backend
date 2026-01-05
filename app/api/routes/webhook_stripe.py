@@ -242,18 +242,19 @@ async def handle_subscription_first_payment(session, event_id):
     cursor = conn.cursor()
     
     try:
+        # Insert without stripe_subscription_id to match production schema
         cursor.execute(
             """
             INSERT INTO pending_subscriptions 
-            (stripe_customer_id, stripe_subscription_id, plan_name, price_id, credits_to_award)
-            VALUES (%s, %s, %s, %s, %s)
+            (stripe_customer_id, plan_name, price_id, credits_to_award)
+            VALUES (%s, %s, %s, %s)
             ON CONFLICT (stripe_customer_id) 
             DO UPDATE SET 
-                stripe_subscription_id = EXCLUDED.stripe_subscription_id,
                 plan_name = EXCLUDED.plan_name,
+                price_id = EXCLUDED.price_id,
                 credits_to_award = EXCLUDED.credits_to_award
             """,
-            (customer_id, subscription_id, plan_name, price_id, credits_to_award)
+            (customer_id, plan_name, price_id, credits_to_award)
         )
         conn.commit()
         

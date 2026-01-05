@@ -99,7 +99,7 @@ async def create_subscription_checkout(
         session = stripe_service.create_checkout_session(
             price_id=price_id,
             customer_email=user_email,  user_id=user_id,  # ← Link user immediately
-            success_url=f"{settings.FRONTEND_URL}/dashboard?checkout=success",
+            success_url=f"{settings.FRONTEND_URL}/checkout/success",
             cancel_url=f"{settings.FRONTEND_URL}/pricing",
             mode="subscription",
         )
@@ -158,9 +158,9 @@ async def create_credit_checkout(
     try:
         logger.info(f"[CHECKOUT] Creating credit pack session | UserID: {user_id} | Pack: {pack_info['name']} | Credits: {pack_info['credits']}")
         
-        # Construct URLs
-        success_url = f"{settings.FRONTEND_URL}/dashboard?checkout=success"
-        cancel_url = f"{settings.FRONTEND_URL}/dashboard?checkout=cancel"
+        # Construct URLs - always use /checkout/success for auth rehydration
+        success_url = f"{settings.FRONTEND_URL}/checkout/success"
+        cancel_url = f"{settings.FRONTEND_URL}/dashboard"
         
         # 🔍 VERIFY: Log exact URLs that will be used
         logger.info(f"[CHECKOUT] 🔍 REDIRECT URLs:")

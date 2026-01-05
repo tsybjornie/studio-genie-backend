@@ -255,17 +255,29 @@ async def handle_subscription_first_payment(session, event_id):
     cursor = conn.cursor()
     
     try:
-        # Find user by customer_id
-        logger.info(f"[WEBHOOK] Looking up user by stripe_customer_id: {customer_id}")
-        cursor.execute(
-            "SELECT id, email, credits FROM users WHERE stripe_customer_id = %s",
-            (customer_id,)
-        )
+        # Get user_id from session metadata (set during checkout creation)
+        user_id = session.get("client_reference_id") or session.get("metadata", {}).get("user_id")
+        
+        if user_id:
+            # Lookup by user_id directly (most reliable)
+            logger.info(f"[WEBHOOK] Looking up user by user_id (client_reference_id): {user_id}")
+            cursor.execute(
+                "SELECT id, email, credits FROM users WHERE id = %s",
+                (user_id,)
+            )
+        else:
+            # Fallback: lookup by stripe_customer_id (less reliable)
+            logger.info(f"[WEBHOOK] Looking up user by stripe_customer_id: {customer_id}")
+            cursor.execute(
+                "SELECT id, email, credits FROM users WHERE stripe_customer_id = %s",
+                (customer_id,)
+            )
+        
         user = cursor.fetchone()
         
         if not user:
-            logger.warning(f"[WEBHOOK] User not found for customer {customer_id} | Skipping (user must be registered)")
-            log_webhook_event("checkout.session.completed", event_id, "subscription", customer_id, None, False, "User not found")
+            logger.warning(f"[WEBHOOK] User not found | UserID: {user_id} | CustomerID: {customer_id} | Skipping")
+            log_webhook_event("checkout.session.completed", event_id, "subscription", customer_id, user_id, False, "User not found")
             return
         
         user_id = user["id"]
@@ -279,9 +291,10 @@ async def handle_subscription_first_payment(session, event_id):
             SET subscription_status = 'active',
                 subscription_plan = %s,
                 stripe_subscription_id = %s,
+                stripe_customer_id = %s,
                 credits = %s
             WHERE id = %s
-        """, (plan_name, subscription_id, new_balance, user_id))
+        """, (plan_name, subscription_id, customer_id, new_balance, user_id))
         conn.commit()
         
         # Verify update by re-querying user

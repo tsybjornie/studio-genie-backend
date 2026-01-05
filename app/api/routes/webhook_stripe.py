@@ -216,7 +216,10 @@ async def handle_checkout_completed(event):
 
 
 async def handle_subscription_first_payment(session, event_id):
-    """Store first subscription payment as pending (user registers after payment)"""
+    """
+    Activate subscription immediately on first payment.
+    No pending_subscriptions - directly update users table.
+    """
     customer_id = session.get("customer")
     subscription_id = session.get("subscription")
     
@@ -251,25 +254,46 @@ async def handle_subscription_first_payment(session, event_id):
     cursor = conn.cursor()
     
     try:
-        # Insert without plan_name - production schema doesn't have this column
+        # Find user by customer_id
+        logger.info(f"[WEBHOOK] Looking up user by stripe_customer_id: {customer_id}")
         cursor.execute(
-            """
-            INSERT INTO pending_subscriptions 
-            (stripe_customer_id, price_id, credits_to_award)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (stripe_customer_id) 
-            DO UPDATE SET 
-                price_id = EXCLUDED.price_id,
-                credits_to_award = EXCLUDED.credits_to_award
-            """,
-            (customer_id, price_id, credits_to_award)
+            "SELECT id, email, credits FROM users WHERE stripe_customer_id = %s",
+            (customer_id,)
         )
+        user = cursor.fetchone()
+        
+        if not user:
+            logger.warning(f"[WEBHOOK] User not found for customer {customer_id} | Skipping (user must be registered)")
+            log_webhook_event("checkout.session.completed", event_id, "subscription", customer_id, None, False, "User not found")
+            return
+        
+        user_id = user["id"]
+        user_email = user["email"]
+        current_credits = user["credits"] or 0
+        new_balance = current_credits + credits_to_award
+        
+        # DIRECTLY ACTIVATE SUBSCRIPTION + ADD CREDITS
+        cursor.execute("""
+            UPDATE users 
+            SET subscription_status = 'active',
+                subscription_plan = %s,
+                stripe_subscription_id = %s,
+                credits = %s
+            WHERE id = %s
+        """, (plan_name, subscription_id, new_balance, user_id))
         conn.commit()
         
-        log_pending_subscription("CREATED", customer_id, subscription_id, plan_name, credits_to_award)
-        log_webhook_event("checkout.session.completed", event_id, "subscription", customer_id, None, True)
+        # Verify update by re-querying user
+        cursor.execute(
+            "SELECT email, subscription_status, subscription_plan FROM users WHERE id = %s",
+            (user_id,)
+        )
+        updated_user = cursor.fetchone()
         
-        logger.info(f"[WEBHOOK] Pending subscription stored | CustomerID: {customer_id} | SessionID: {session['id']}")
+        logger.info(f"[WEBHOOK] ✅ Subscription activated | UserID: {user_id} | Email: {updated_user['email'] if updated_user else 'NOT FOUND'}")
+        logger.info(f"[WEBHOOK]   Status: {updated_user['subscription_status'] if updated_user else 'NULL'} | Plan: {updated_user['subscription_plan'] if updated_user else 'NULL'} | Credits: +{credits_to_award} → {new_balance}")
+        
+        log_webhook_event("checkout.session.completed", event_id, "subscription", customer_id, user_id, True)
         
     finally:
         cursor.close()

@@ -1,6 +1,7 @@
 """
 Stripe Webhook Handler - Canonical v1.0
 Webhook-only credit grants with pending subscription support
+DEPLOYMENT TRIGGER: 2026-01-06 - Direct subscription activation
 """
 import logging
 import psycopg2

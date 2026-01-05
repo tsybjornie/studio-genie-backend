@@ -109,8 +109,9 @@ async def handle_invoice_paid(event):
     
     try:
         # Find user by customer_id
+        logger.info(f"[WEBHOOK] Looking up user by stripe_customer_id: {customer_id}")
         cursor.execute(
-            "SELECT id, credits, stripe_subscription_id FROM users WHERE stripe_customer_id = %s",
+            "SELECT id, email, credits, stripe_subscription_id FROM users WHERE stripe_customer_id = %s",
             (customer_id,)
         )
         user = cursor.fetchone()
@@ -135,7 +136,15 @@ async def handle_invoice_paid(event):
             """, (plan_name, subscription_id, new_balance, user_id))
             conn.commit()
             
-            logger.info(f"[WEBHOOK] ✅ Subscription activated | UserID: {user_id} | Plan: {plan_name} | Credits: +{credits_to_add} → {new_balance}")
+            # Verify update by re-querying user
+            cursor.execute(
+                "SELECT email, subscription_status, subscription_plan FROM users WHERE id = %s",
+                (user_id,)
+            )
+            updated_user = cursor.fetchone()
+            
+            logger.info(f"[WEBHOOK] ✅ Subscription activated | UserID: {user_id} | Email: {updated_user['email'] if updated_user else 'NOT FOUND'}")
+            logger.info(f"[WEBHOOK]   Status: {updated_user['subscription_status'] if updated_user else 'NULL'} | Plan: {updated_user['subscription_plan'] if updated_user else 'NULL'} | Credits: +{credits_to_add} → {new_balance}")
             
         else:
             logger.warning(f"[WEBHOOK] User not found for customer {customer_id} | Skipping (auth-first flow)")

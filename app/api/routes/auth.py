@@ -158,3 +158,13 @@ def login(data: LoginRequest):
         logging.error("LOGIN ERROR")
         logging.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/logout")
+def logout():
+    """
+    Logout endpoint - returns success to allow frontend to clear client-side state.
+    Since auth uses Bearer tokens (not HttpOnly cookies), no server-side action needed.
+    """
+    return {"message": "Logged out successfully"}
+

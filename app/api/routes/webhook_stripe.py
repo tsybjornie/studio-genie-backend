@@ -28,8 +28,14 @@ CREDIT_PACK_AMOUNTS = {
 
 
 def get_db_connection():
-    """Get database connection"""
-    return psycopg2.connect(settings.DATABASE_URL)
+    """Get database connection with RealDictCursor for dict-like row access"""
+    from psycopg2.extras import RealDictCursor
+    conn = psycopg2.connect(
+        settings.DATABASE_URL,
+        cursor_factory=RealDictCursor,
+        sslmode="require"
+    )
+    return conn
 
 
 @router.post("/stripe")

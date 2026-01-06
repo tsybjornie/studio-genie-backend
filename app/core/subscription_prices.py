@@ -16,19 +16,19 @@ SUBSCRIPTION_PRICES = {
     "price_1SjjxCBBwifSvpdI963oyLLB": {
         "plan_name": "starter",
         "display_name": "Starter",
-        "monthly_credits": 4,  # 4 AI-generated videos
+        "monthly_credits": 12,  # 4 videos × 3 credits per video
         "price_usd": 39,
     },
     "price_1SjjxfBBwifSvpdIeWCEYEQY": {
         "plan_name": "creator",
         "display_name": "Creator",
-        "monthly_credits": 12,  # 12 AI-generated videos
+        "monthly_credits": 36,  # 12 videos × 3 credits per video
         "price_usd": 79,
     },
     "price_1Sjjy4BBwifSvpdIIJxsl1yz": {
         "plan_name": "pro",
         "display_name": "Pro",
-        "monthly_credits": 30,  # 30 AI-generated videos
+        "monthly_credits": 90,  # 30 videos × 3 credits per video
         "price_usd": 149,
     },
 }

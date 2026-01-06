@@ -1,7 +1,7 @@
 """
 Stripe Webhook Handler - Canonical v1.0
 Webhook-only credit grants with pending subscription support
-DEPLOYMENT TRIGGER: 2026-01-06 16:06 - Final identity stabilization
+DEPLOYMENT TRIGGER: 2026-01-07 03:52 - Fixed RealDictCursor TypeError
 """
 import logging
 import psycopg2

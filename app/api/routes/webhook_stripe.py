@@ -255,28 +255,25 @@ async def handle_subscription_first_payment(session, event_id):
     cursor = conn.cursor()
     
     try:
-        # Get user_id from session metadata (set during checkout creation)
-        user_id = session.get("client_reference_id") or session.get("metadata", {}).get("user_id")
+        # IDENTITY SOURCE OF TRUTH: client_reference_id ONLY
+        user_id = session.get("client_reference_id")
         
-        if user_id:
-            # Lookup by user_id directly (most reliable)
-            logger.info(f"[WEBHOOK] Looking up user by user_id (client_reference_id): {user_id}")
-            cursor.execute(
-                "SELECT id, email, credits FROM users WHERE id = %s",
-                (user_id,)
-            )
-        else:
-            # Fallback: lookup by stripe_customer_id (less reliable)
-            logger.info(f"[WEBHOOK] Looking up user by stripe_customer_id: {customer_id}")
-            cursor.execute(
-                "SELECT id, email, credits FROM users WHERE stripe_customer_id = %s",
-                (customer_id,)
-            )
+        if not user_id:
+            logger.error(f"[WEBHOOK] No client_reference_id in session | SessionID: {session.get('id')} | REJECTING")
+            log_webhook_event("checkout.session.completed", event_id, "subscription", customer_id, None, False, "Missing client_reference_id")
+            return
+        
+        # Direct lookup by user_id (NO fallback)
+        logger.info(f"[WEBHOOK] Looking up user by user_id (client_reference_id): {user_id}")
+        cursor.execute(
+            "SELECT id, email, credits FROM users WHERE id = %s",
+            (user_id,)
+        )
         
         user = cursor.fetchone()
         
         if not user:
-            logger.warning(f"[WEBHOOK] User not found | UserID: {user_id} | CustomerID: {customer_id} | Skipping")
+            logger.error(f"[WEBHOOK] User not found for user_id: {user_id} | REJECTING")
             log_webhook_event("checkout.session.completed", event_id, "subscription", customer_id, user_id, False, "User not found")
             return
         
@@ -285,7 +282,8 @@ async def handle_subscription_first_payment(session, event_id):
         current_credits = user["credits"] or 0
         new_balance = current_credits + credits_to_award
         
-        # DIRECTLY ACTIVATE SUBSCRIPTION + ADD CREDITS
+        # DIRECT ACTIVATION - Update users table ONLY (NO pending_subscriptions)
+        logger.info(f"[WEBHOOK] Activating subscription | UserID: {user_id} | Plan: {plan_name} | Credits: +{credits_to_award}")
         cursor.execute("""
             UPDATE users 
             SET subscription_status = 'active',
@@ -297,15 +295,15 @@ async def handle_subscription_first_payment(session, event_id):
         """, (plan_name, subscription_id, customer_id, new_balance, user_id))
         conn.commit()
         
-        # Verify update by re-querying user
+        # Verify update
         cursor.execute(
-            "SELECT email, subscription_status, subscription_plan FROM users WHERE id = %s",
+            "SELECT email, subscription_status, subscription_plan, credits FROM users WHERE id = %s",
             (user_id,)
         )
         updated_user = cursor.fetchone()
         
-        logger.info(f"[WEBHOOK] ✅ Subscription activated | UserID: {user_id} | Email: {updated_user['email'] if updated_user else 'NOT FOUND'}")
-        logger.info(f"[WEBHOOK]   Status: {updated_user['subscription_status'] if updated_user else 'NULL'} | Plan: {updated_user['subscription_plan'] if updated_user else 'NULL'} | Credits: +{credits_to_award} → {new_balance}")
+        logger.info(f"[WEBHOOK] ✅ Subscription activated | UserID: {user_id} | Email: {updated_user['email']}")
+        logger.info(f"[WEBHOOK]   Status: {updated_user['subscription_status']} | Plan: {updated_user['subscription_plan']} | Credits: {updated_user['credits']}")
         
         log_webhook_event("checkout.session.completed", event_id, "subscription", customer_id, user_id, True)
         
